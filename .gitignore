@@ -1,0 +1,23 @@
+# ===== 个人账号数据（练度/命轮库存/UID，绝不入库）=====
+data/personal/characters.js
+data/personal/fatewheels.js
+data/personal/roster-notes.md
+
+# ===== 截图与浏览器存档 =====
+唤醒体/
+命轮/
+钥令/
+浏览器/
+
+# ===== 本地工作区（抓取原始数据/脚本/工具痕迹）=====
+.zcode/
+.mimosa/
+.zcodeignore
+
+# ===== 含 API Key 的本机配置（用 config.example.json 作模板）=====
+config.json
+
+# ===== 系统杂项 =====
+Thumbs.db
+Desktop.ini
+.DS_Store

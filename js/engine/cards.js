@@ -1,0 +1,436 @@
+/* =========================================================
+ * 引擎 · 卡牌生命周期与出牌结算
+ * ---------------------------------------------------------
+ * 牌堆模型：全队共享 牌堆/手牌/弃牌/消除 四区（杀戮尖塔式通用模型；
+ * 忘却前夜实际是共享牌组还是角色独立牌组 待确认，见 MECHANICS.md）
+ * ========================================================= */
+"use strict";
+
+const Cards = {
+
+  HAND_LIMIT: 10,   // 手牌上限（占位，待确认）
+
+  /* 开战：按 SSR 口径组建共享牌组（T15，图证实锤 2026-10-01）→ 洗牌
+   * 每名唤醒体贡献 4 张：打击 + 防御 + 技能1 + 技能2（异格多为 1 张技能，有则凑入）；
+   * 狂气爆发/灵知觉醒不进默认牌堆（爆发走按钮、觉醒靠银钥觉醒置入）；
+   * 命轮加卡（蚀灭·萝坦 +2 打击）待 T8 框架 */
+  buildPiles() {
+    const b = State.battle;
+    b.piles = { draw: [], hand: [], discard: [], exhaust: [] };
+    /* 标点归一化（wiki「统统消失！」vs 卡名「统统消失!」等全半角差异） */
+    const norm = (s) => (s || "").replace(/[！？：，]/g, (ch) => ({ "！": "!", "？": "?", "：": ":", "，": "," }[ch])).replace(/\s+/g, "");
+    for (const ally of b.allies) {
+      const own = DBF.cards.filter(c => c.owner === ally.def.id);
+      const strike = own.find(c => /^(基础)?打击$/.test(c.name || ""));
+      const defend = own.find(c => /^(基础)?防御$/.test(c.name || ""));
+      /* 技能1（右）/技能2（左）：按 wiki.skills[].name 映射（T20 退修，用户指定口径）——
+       * 异格技能卡大量 type="攻击"（恨意宣泄/长刃·陨等），type 过滤漏卡；
+       * wiki 无该角色页/skills 未解析、或卡名未建卡时回落 type∈{技能,权柄}（老批口径） */
+      const wikiChar = DBF.wiki && DBF.wiki.characters && DBF.wiki.characters[ally.def.name];
+      const wikiSkills = ((wikiChar && wikiChar.skills) || []).map(s => s && s.name).filter(Boolean);
+      let skills = wikiSkills.length
+        ? wikiSkills.map(n => own.find(c => norm(c.name) === norm(n))).filter(Boolean).slice(0, 2)
+        : [];
+      if (!skills.length) skills = own.filter(c => c.type === "技能" || c.type === "权柄").slice(0, 2);
+      const four = [strike, defend, ...skills].filter(Boolean);
+      if (!four.length) {
+        for (const cid of (ally.def.defaultDeck || [])) {
+          if (State.getCard(cid)) b.piles.draw.push({ uid: State.nextUid("c"), defId: cid, upgraded: false, generated: false });
+        }
+        Log.add(`⚠ ${ally.def.name} 无 SSR 口径卡数据，回落 defaultDeck 模板`, "sys");
+        continue;
+      }
+      for (const c of four) b.piles.draw.push({ uid: State.nextUid("c"), defId: c.id, upgraded: false, generated: false });
+      Log.add(`${ally.def.name} 贡献 ${four.length} 张（打击+防御+技能×${skills.length}${wikiSkills.length ? ",wiki映射" : ",type回落"}）`, "sys");
+      /* 命轮加卡（T8 三期：坚韧意志/不存在之地/遗忘之手——探索开始置入额外卡） */
+      const extras = (typeof Wheels !== "undefined") ? Wheels.extraCards(ally) : [];
+      for (const nm of extras) {
+        const baseRe = new RegExp(`^(基础)?${nm}$`);
+        const cd = own.find(c => norm(c.name || "") === norm(nm) || baseRe.test(c.name || ""))
+          || DBF.cards.find(c => c.owner === "shared" && norm(c.name || "") === norm(nm));   // 灵感等 shared 卡（被缚的歌谣）
+        if (cd) {
+          b.piles.draw.push({ uid: State.nextUid("c"), defId: cd.id, upgraded: false, generated: false });
+          Log.add(`💫 命轮加卡：${ally.def.name} 的「${cd.name}」置入牌库`, "good");
+        }
+      }
+    }
+    this.shuffle(b.piles.draw);
+    Log.add(`牌组建成：共 ${b.piles.draw.length} 张（SSR 口径共享牌组，T15/T20）`, "sys");
+  },
+
+  shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  },
+
+  inst(defId, upgraded = false) {
+    return { uid: State.nextUid("c"), defId, upgraded, generated: true };
+  },
+
+  def(inst) { return State.getCard(inst.defId); },
+
+  /* 抽牌 */
+  draw(n) {
+    const b = State.battle;
+    for (let i = 0; i < n; i++) {
+      if (b.piles.hand.length >= this.HAND_LIMIT) { Log.add("手牌已满，无法继续抽牌", "sys"); break; }
+      if (!b.piles.draw.length) {
+        if (!b.piles.discard.length) { Log.add("牌堆与弃牌堆均无牌可抽", "sys"); break; }
+        b.piles.draw = b.piles.discard.splice(0);
+        this.shuffle(b.piles.draw);
+        Log.add("弃牌堆洗回牌堆", "sys");
+      }
+      const c = b.piles.draw.pop();
+      b.piles.hand.push(c);
+      Log.add(`抽到 <b>${this.def(c).name}</b>`, "sys");
+    }
+    State.notify();
+  },
+
+  /* 生成指定卡牌到手牌（沙盒干预/生成类卡） */
+  generate(cardId, upgraded = false) {
+    const b = State.battle;
+    if (!b) { alert("请先开始战斗"); return; }
+    if (!State.getCard(cardId)) { alert(`未知卡牌: ${cardId}`); return; }
+    if (b.piles.hand.length >= this.HAND_LIMIT) { alert("手牌已满"); return; }
+    b.piles.hand.push(this.inst(cardId, upgraded));
+    Log.add(`生成卡牌 <b>${this.def(b.piles.hand[b.piles.hand.length - 1]).name}</b> 到手牌`, "sys");
+    State.notify();
+  },
+
+  /* 把实例移到某区 */
+  _move(uid, zone) {
+    const b = State.battle;
+    for (const key of ["hand", "draw", "discard", "exhaust"]) {
+      const idx = b.piles[key].findIndex(c => c.uid === uid);
+      if (idx >= 0) { const [c] = b.piles[key].splice(idx, 1); if (zone) b.piles[zone].push(c); return c; }
+    }
+    return null;
+  },
+
+  /* 消除（从手牌直接移出战斗） */
+  exhaustFromHand(uid) {
+    const c = this._move(uid, "exhaust");
+    if (c) {
+      Log.add(`消除手牌 <b>${this.def(c).name}</b>`, "sys");
+      State.notify();
+    }
+  },
+
+  /* 出牌主流程：算力检查 → 结算 effects → 进弃牌/消除 → 狂气爆发清空 */
+  play(uid, targetUid) {
+    const b = State.battle;
+    if (!b || b.phase !== "play") { alert("当前不在出牌阶段"); return; }
+    const inst = b.piles.hand.find(c => c.uid === uid);
+    if (!inst) return;
+    const card = this.def(inst);
+    const owner = b.allies.find(a => a.def.id === card.owner) || b.allies[0];
+    if (!owner) { alert("场上没有我方单位"); return; }
+    const target = targetUid ? State.findUnit(targetUid) : null;
+    if (card.target === "enemy" && (!target || target.side !== "enemy")) { alert("请先选择一个敌方目标"); return; }
+    if (card.target === "ally" && (!target || target.side !== "ally")) { alert("请选择一个我方目标"); return; }
+
+    /* 算力检查（gamekee：每回合初始5点算力；狂气爆发不消耗算力）
+     * X 费（无边荒影，用户 2026-10-01 定案）：cost="X"=打出消耗所有算力（0 算力也可打出）；银钥按实耗结算
+     * 命轮减费（T8 二期，巨人之刃）：inst.disc=本回合算力消耗-1（爆发时 roll，回合末清） */
+    const isBurst = card.type === "狂气爆发";
+    if (!isBurst) {
+      const isX = card.cost === "X";
+      const disc = inst.disc || 0;
+      const spend = isX ? b.energy : Math.max(0, card.cost - disc);
+      if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(命轮减费)` : ""}）`); return; }
+      b.energy -= spend;
+      delete inst.disc;   // 减费随打出消耗
+      /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减 */
+      const skLevel = (owner.stats && owner.stats.silverKeyCharge) || 15;
+      b.silver += State.silverPerCost(skLevel) * spend;
+      if (isX) Log.add(`<span class="dim">X 费：消耗全部算力 ${spend} 点（银钥按实耗 +${State.silverPerCost(skLevel) * spend}）</span>`, "sys");
+    } else {
+      if (owner.guku < 100) Log.add(`<span class="warn-text">注意：狂气不足100仍打出了爆发卡（沙盒模式不阻止）</span>`, "sys");
+      /* 官方词条（2026-09-23）：释放狂气爆发后剩余狂气减半（超限语境）；普通爆发仍清零 */
+      const over = owner.gukuMax > 100 && owner.guku >= owner.gukuMax;
+      owner.guku = over ? Math.floor(owner.guku / 2) : 0;
+      Log.add(`${owner.def.name} 释放${over ? "【超限】" : ""}狂气爆发（不消耗算力），剩余狂气 ${owner.guku}`, "sys");
+    }
+
+    Log.add(`▶ 打出 <b>${card.name}</b>${inst.upgraded ? "(升)" : ""}${target ? ` → ${target.def.name}` : ""}（算力余 ${b.energy}）`, "sys");
+
+    /* 魔女宽檐帽首卡判定（T8）：本回合第一张指令卡标记在结算后置位——结算中的 compute 读到 false 即首卡 */
+    const wasFirstCard = b.firstCardPlayed === false;
+    for (const eff of (inst.upgraded && card.upgrade ? card.upgrade.effects : card.effects)) {
+      this.resolveEffect(eff, owner, target, card);
+    }
+    if (wasFirstCard) b.firstCardPlayed = true;
+    b.playedCount = (b.playedCount || 0) + 1;   // T34 条件边：「出牌>=N」计数（爆发卡走 releaseBurst 不计）
+    this._move(uid, (inst.forceExhaust || card.exhaust) ? "exhaust" : "discard");   // forceExhaust：钥令生成的「消耗」复制牌
+    /* 命轮触发（T8）：打击类（被缚抽牌/于暴雨算力中毒/灵魂诞生回血/核心熔解力量/星天兽暴击）+ 任意卡类（琥珀力量） */
+    if (typeof Wheels !== "undefined") { Wheels.onStrikePlay(card, owner); Wheels.onAnyPlay(card, owner); }
+    Turn.checkEnd();
+    State.notify();
+  },
+
+  /* 卡牌等级加成：打击/防御类卡每升一级 +2%（1/6~6/6） */
+  /* =======================================================
+   * 动态卡面：按效果结构生成带实时数值的描述
+   * mode="raw"    只计算唤醒体属性（等级成长/面板强效/体质换算），不含战斗状态
+   * mode="actual" 含当前战斗状态（力量/增伤/易伤/脆弱），与实际结算一致
+   * ======================================================= */
+  describeEffects(card, source, mode = "raw") {
+    if (!source || !card.effects || !card.effects.length) return [];
+    const lv = source.cardLv || 1;
+    const buffName = (id) => { const b = State.getBuff(id); return b ? `${b.name}` : id; };
+    const ignoreBuffs = mode !== "actual";
+    const out = [];
+    for (const eff of card.effects) {
+      const grow = (eff.perLv || 0) * (lv - 1);
+      switch (eff.op) {
+        case "damage": {
+          if (eff.pctTargetMaxHp) {
+            const tgt = State.battle ? State.battle.enemies.find(e => e.hp > 0) : null;
+            const v = tgt ? Math.max(1, Math.ceil(tgt.maxHp * eff.pctTargetMaxHp / 100)) : `目标最大生命×${eff.pctTargetMaxHp}%`;
+            out.push(`造成${v}点伤害（对所有敌人）`);
+            break;
+          }
+          let base = eff.value != null ? eff.value + grow : Math.ceil((source.attack || 0) * ((eff.scaleAttack || 0) + (eff.scalePerLv || 0) * (lv - 1)));
+          const target = State.battle ? State.battle.enemies.find(e => e.hp > 0) : null;
+          const r = Damage.compute({ source, target, card, eff: { value: base }, ignoreBuffs });
+          let t = `造成${r.final}点伤害`;
+          if (eff.times > 1) t += `×${eff.times}次`;
+          if (eff.allEnemies) t += "（对所有敌人）";
+          out.push(t);
+          break;
+        }
+        case "block": {
+          /* fpFix：消除 50×0.28=14.000…002 型浮点尾巴，避免 ceil 多 +1 */
+          let v = eff.value != null ? eff.value + grow : Math.ceil(Math.round((source.defense || 0) * ((eff.scaleDefense || 1) + (eff.scalePerLv || 0) * (lv - 1)) * 1e6) / 1e6);
+          if (!ignoreBuffs) {
+            const frag = Buffs.collect(source, "shieldPct");
+            if (frag.length) v = Math.round(v * Buffs.aggregate(frag).factor);
+          }
+          let t = `获得${v}点护盾`;
+          if (eff.times > 1) t += `×${eff.times}次`;
+          out.push(t);
+          break;
+        }
+        case "heal": {
+          let v, suffix = "";
+          if (eff.pctConstitution != null) {
+            const pct = eff.pctConstitution + grow;
+            v = Math.ceil((source.stats?.constitution || 0) * pct / 100);
+            suffix = `（体质${Math.round(pct * 10) / 10}%）`;
+          } else {
+            v = (eff.value || 0) + grow;
+          }
+          out.push(`回复${v}点生命${suffix}`);
+          break;
+        }
+        case "guku": {
+          const bonus = (card.type === "攻击" || card.type === "防御") ? lv - 1 : 0;
+          out.push(`获得${eff.value + grow + bonus}点狂气`);
+          break;
+        }
+        case "gukuAllies":
+          out.push(`其他唤醒体各获${eff.value + grow}点狂气`);
+          break;
+        case "buff": {
+          const verb = eff.target === "all_enemies" ? "对所有敌人施加"
+            : eff.target === "enemy" ? "对目标施加"
+            : eff.target === "ally" ? "为目标施加" : "获得";
+          let perTxt = eff.per ? `（每层${eff.per > 0 ? "+" : ""}${eff.per}）` : "";
+          if (eff.perCalcAtkPct) {
+            const pct = eff.perCalcAtkPct.base + (eff.perCalcAtkPct.perLv || 0) * (lv - 1);
+            const v = Math.round((source.attack || 0) * pct / 100);
+            perTxt = `（+${v}，攻×${Math.round(pct * 10) / 10}%）`;
+          } else if (eff.perCalcDefPct) {
+            const pct = eff.perCalcDefPct.base + (eff.perCalcDefPct.perLv || 0) * (lv - 1);
+            const v = Math.round((source.defense || 0) * pct / 100);
+            perTxt = `（${v}，防×${Math.round(pct * 10) / 10}%）`;
+          } else if (eff.perFlat) {
+            const v = eff.perFlat.base + (eff.perFlat.perLv || 0) * (lv - 1);
+            perTxt = `（${Math.round(v * 10) / 10}点）`;
+          }
+          out.push(`${verb}${eff.stacksAtkPct
+            ? `${Math.max(1, Math.round((source.attack || 0) * eff.stacksAtkPct.base / 100))}层（攻×${eff.stacksAtkPct.base}%）`
+            : `${eff.stacks || 1}层`}${buffName(eff.buffId)}${perTxt}`);
+          break;
+        }
+        case "draw": out.push(`抽${eff.value}张牌`); break;
+        case "energy": out.push(`获得${eff.value}点算力`); break;
+        case "silver": out.push(`获得${eff.chargePct != null ? Math.round((source.stats ? (source.stats.silverKeyCharge || 0) : 0) * eff.chargePct / 100) : eff.value}银钥能量`); break;
+        case "tentacle": out.push(`获得${eff.value}条触腕`); break;
+        case "dispel": out.push(`驱散${eff.target === "self" ? "自身" : "目标"}的${eff.kind === "debuff" ? "减益" : "增益"}`); break;
+        default: break;
+      }
+    }
+    return out;
+  },
+
+  /* 单个效果结算 */
+  resolveEffect(eff, source, target, card) {
+    switch (eff.op) {
+      case "damage": {
+        const times = eff.times || 1;
+        /* 基础打击/防御的卡牌等级成长=倍率成长（scalePerLv=0.02/级，灰机 2026-10-02 全量核验：
+         * 56角色 打击/防御均为 攻/防×(10%+2%×(级-1))）——不再有额外乘数（旧 cardLvMult ×1.02/级 系误读已移除） */
+        const lvGrow = (eff.perLv || 0) * ((source.cardLv || 1) - 1);
+        let grownEff = eff;
+        if (lvGrow) grownEff = { ...grownEff, value: (grownEff.value != null ? grownEff.value : 0) + lvGrow };
+        if (eff.scalePerLv) grownEff = { ...grownEff, scaleAttack: (eff.scaleAttack || 0) + eff.scalePerLv * ((source.cardLv || 1) - 1) };
+        /* pctTargetMaxHp：按目标最大生命%的固定伤害（最低1，向上取整），如「虚无终结」 */
+        if (grownEff.pctTargetMaxHp) {
+          const pct = grownEff.pctTargetMaxHp;
+          const tgts = grownEff.allEnemies ? State.battle.enemies.filter(e => e.hp > 0) : [target].filter(Boolean);
+          for (const tgt of tgts) {
+            if (tgt.hp <= 0) continue;
+            const v = Math.max(1, Math.ceil(tgt.maxHp * pct / 100));
+            Damage.deal({ source, target: tgt, card, eff: { value: v }, label: `${card.name}（目标最大生命${pct}%）` });
+          }
+          break;
+        }
+        /* T32 修复（2026-10-02）：缩放基础卡（scaleAttack 无 value）此前被注入 value:0，
+         * 卡Lv>1 时 Damage.compute 视为平值 0 → 打击伤害清零 */
+        const targets = grownEff.allEnemies
+          ? State.battle.enemies.filter(e => e.hp > 0)
+          : [target && target.hp > 0 ? target : State.battle.enemies.find(e => e.hp > 0)].filter(Boolean);
+        for (const tgt of targets) {
+          for (let i = 0; i < times; i++) {
+            if (tgt.hp <= 0) break;
+            Damage.deal({ source, target: tgt, card, eff: grownEff, label: `${card.name}${times > 1 ? `(${i + 1}/${times})` : ""}` });
+          }
+        }
+        break;
+      }
+      case "block": {
+        /* 护盾获得量受脆弱（shieldPct）影响
+         * scalePerLv：护盾%随技能等级成长（如 未损的骑士心 防×(28+7×技能等级)%、基础防御 10%+2%/级） */
+        let v = eff.value != null ? eff.value + (eff.perLv || 0) * ((source.cardLv || 1) - 1)
+          : Math.ceil(Math.round((source.defense || 0) * ((eff.scaleDefense || 0) + (eff.scalePerLv || 0) * ((source.cardLv || 1) - 1)) * 1e6) / 1e6);
+        const frag = Buffs.collect(source, "shieldPct");
+        if (frag.length) {
+          const agg = Buffs.aggregate(frag);
+          v = Math.round(v * agg.factor);
+          Log.add(`<span class="dim">护盾受 ${frag.map(m => m.name).join("、")} 影响 ×${agg.factor.toFixed(3)}${agg.hasUnknown ? " ⚠叠法未确认" : ""}</span>`);
+        }
+        /* 命轮「护盾提高X%」统一入口（T8 三期，blockPct 在 addShield 内乘算） */
+        const gained = (typeof Damage !== "undefined") ? Damage.addShield(source, v) : (source.shield += v, v);
+        Log.add(`${source.def.name} 获得护盾 +${gained}（当前 ${source.shield}，回合结束移除）`, "good");
+        if (window.UIBoard) UIBoard.float(source.uid, `+${gained}🛡`, "shield");
+        break;
+      }
+      case "buff": {
+        const ts = eff.target === "all_enemies"
+          ? State.battle.enemies.filter(e => e.hp > 0)
+          : [eff.target === "enemy" || eff.target === "ally" ? target : source].filter(Boolean);
+        /* perCalcAtkPct：按攻击力百分比计算每层点数（如 超越之目 攻×(2.4+0.6×技能等级)% 力量）
+         * perCalcDefPct：按防御力百分比计算每层点数（如 无边荒影 防×(3.2+0.8×技能等级)% 降力）
+         * perFlat：每层固定点数随技能等级成长（如 未损的骑士心 (3.2+0.8×技能等级)点力量） */
+        let per = eff.per || null;
+        if (eff.perCalcAtkPct) {
+          const lv = source.cardLv || 1;
+          per = Math.round((source.attack || 0) * (eff.perCalcAtkPct.base + (eff.perCalcAtkPct.perLv || 0) * (lv - 1)) / 100);
+        } else if (eff.perCalcDefPct) {
+          const lv = source.cardLv || 1;
+          per = Math.round((source.defense || 0) * (eff.perCalcDefPct.base + (eff.perCalcDefPct.perLv || 0) * (lv - 1)) / 100);
+        } else if (eff.perFlat) {
+          const lv = source.cardLv || 1;
+          per = Math.round((eff.perFlat.base + (eff.perFlat.perLv || 0) * (lv - 1)) * 10) / 10;
+        }
+        /* stacksAtkPct（T32 建模批）：层数/点数=攻击力×X%（如 中毒层数、反击点数），最低 1 */
+        let stacks = eff.stacks || 1;
+        if (eff.stacksAtkPct) {
+          const pct = eff.stacksAtkPct.base + (eff.stacksAtkPct.perLv || 0) * ((source.cardLv || 1) - 1);
+          stacks = Math.max(1, Math.round((source.attack || 0) * pct / 100));
+        }
+        for (const t of ts) Buffs.add(t, eff.buffId, stacks, eff.duration, card.name, per);
+        break;
+      }
+      case "dispel": {
+        const t = eff.target === "self" ? source : target;
+        if (!t) break;
+        const removed = t.buffs.filter(x => State.getBuff(x.defId)?.kind === eff.kind);
+        for (const r of removed) Log.add(`${t.def.name} 的 ${State.getBuff(r.defId).name} 被驱散`, "sys");
+        t.buffs = t.buffs.filter(x => State.getBuff(x.defId)?.kind !== eff.kind);
+        break;
+      }
+      case "guku": {
+        /* 打击/防御类卡：卡牌等级每升一级额外+1狂气；perLv=每级成长值 */
+        const lvBonus = (card && /^(基础)?(打击|防御)$/.test(card.name || "")) ? (source.cardLv || 1) - 1 : 0;
+        const lvGrow = (eff.perLv || 0) * (source.cardLv || 1) - (eff.perLv || 0);
+        source.guku = Math.min(source.gukuMax || 100, source.guku + eff.value + lvBonus + lvGrow);
+        break;
+      }
+      case "gukuAllies":
+        for (const a of State.battle.allies) {
+          if (a !== source) a.guku = Math.min(a.gukuMax || 100, a.guku + eff.value);
+        }
+        Log.add(`其他唤醒体各获得 ${eff.value} 点狂气`, "sys");
+        break;
+      case "silver": {
+        /* chargePct（T32 建模批）：银钥能量=银钥充能面板×X%（超维角色通用） */
+        const charge = source.stats ? (source.stats.silverKeyCharge || 0) : 0;
+        const sv = eff.value != null ? eff.value : Math.round(charge * (eff.chargePct || 0) / 100);
+        State.battle.silver += sv;
+        Log.add(`获得银钥能量 ${sv}${eff.chargePct != null ? `（银充${charge}×${eff.chargePct}%）` : ""}（当前 ${State.battle.silver}/1000）`, "sys");
+        break;
+      }
+      case "energy":
+        State.battle.energy = Math.min(10, State.battle.energy + eff.value);
+        Log.add(`${source.def.name} 获得 ${eff.value} 点算力（当前 ${State.battle.energy}）`, "sys");
+        break;
+      case "draw":
+        this.draw(eff.value);
+        break;
+      case "tentacle":
+        source.tentacles += eff.value;
+        Log.add(`${source.def.name} 获得触腕 ×${eff.value}（当前 ${source.tentacles} 条）`, "good");
+        break;
+      case "heal": {
+        const t = eff.target === "ally" ? target : source;
+        let v = (eff.value || 0) + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
+        /* pctConstitution：按施放者体质%回复（向上取整），如朵尔的体质*32% */
+        if (eff.pctConstitution != null) {
+          const pct = eff.pctConstitution + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
+          v = Math.ceil((source.stats?.constitution || 0) * pct / 100);
+        }
+        if (t && v > 0) Damage.heal(t, v, card.name);
+        break;
+      }
+      default:
+        Log.add(`⚠ 未实现的效果类型: ${eff.op}`, "sys");
+    }
+  },
+
+  /* 狂气爆发按钮：不走卡牌直接释放该角色的狂气爆发效果
+   * 狂气≥100 可释放；满上限（200）释放 = 超限爆发（专属强化待逐角色实现） */
+  releaseBurst(ally) {
+    const b = State.battle;
+    if (!b || b.phase !== "play") { alert("当前不在出牌阶段"); return; }
+    if (!ally || ally.guku < 100) { alert("狂气不足 100，无法释放狂气爆发"); return; }
+    const burstDef = DBF.cards.find(c => c.owner === ally.def.id && c.type === "狂气爆发");
+    if (!burstDef) { alert(`${ally.def.name} 没有狂气爆发卡定义`); return; }
+    const isOverdrive = ally.gukuMax > 100 && ally.guku >= ally.gukuMax;
+    const pre = ally.guku;
+    Log.add(`<b>⚡ ${ally.def.name} 释放${isOverdrive ? "【超限爆发】" : "狂气爆发"}</b>（消耗狂气 ${pre}）`, "sys");
+    for (const eff of burstDef.effects) this.resolveEffect(eff, ally, null, burstDef);
+    /* 官方词条（2026-09-23）：释放狂气爆发后剩余狂气减半（超限，按释放时刻值）；普通爆发清零 */
+    ally.guku = isOverdrive ? Math.floor(pre / 2) : 0;
+    /* 狂气回冲（词条 2026-09-28）：每次释放狂气爆发后获得 X 点狂气（按面板狂气回充等级查表衰减） */
+    const rcLevel = (ally.stats && ally.stats.gukuRecharge) || 0;
+    if (rcLevel > 0) {
+      const bonus = State.rechargeBonus(rcLevel);
+      if (bonus > 0) {
+        ally.guku = Math.min(ally.gukuMax || 100, ally.guku + bonus);
+        Log.add(`⚡ 狂气回冲：${ally.def.name} 获得 ${bonus} 点狂气（回充等级 ${rcLevel}）`, "sys");
+      }
+    }
+    Log.add(`${ally.def.name} 狂气剩余 ${ally.guku}${isOverdrive ? "（超限减半）" : ""}`, "sys");
+    /* 触腕集结（T7）：深海队爆发后 +1 层（回合末每层驱使 1 条触腕；深海精通概率额外层） */
+    if (typeof Tentacle !== "undefined") Tentacle.onBurst(ally);
+    /* 命轮爆发钩子（T8）：巨人之刃爆伤+60%/神王的颂歌他人获6狂气/致挚友/心之壁垒/圣火等（pre=本次狂气消耗） */
+    if (typeof Wheels !== "undefined") Wheels.onBurst(ally, pre);
+    Turn.checkEnd();
+    State.notify();
+  }
+};

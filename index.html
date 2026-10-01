@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>忘却前夜 · 战斗模拟器</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ======= 顶栏 ======= -->
+<header id="topbar">
+  <div class="brand">忘却前夜 <span class="sub">战斗模拟器</span> <span class="ver">v0.1</span></div>
+  <div class="battle-info">
+    <span id="phase-display" class="phase-chip">准备阶段</span>
+    <span id="turn-display">回合 0</span>
+  </div>
+  <div class="controls">
+    <label class="ctl">第几波
+      <select id="wave-select">
+        <option value="1">第1波</option>
+        <option value="2">第2波</option>
+        <option value="3">第3波</option>
+        <option value="4">第4波</option>
+        <option value="5">第5波</option>
+      </select>
+    </label>
+    <label class="ctl">难度
+      <select id="difficulty-select">
+        <option value="normal">普通n1</option>
+        <option value="hard">困难n2</option>
+        <option value="nightmare">噩梦n3</option>
+        <option value="insane">癫狂n4</option>
+        <option value="n5">n5</option>
+        <option value="n6">n6</option>
+        <option value="n7">n7</option>
+      </select>
+    </label>
+    <label class="ctl">等级 <input id="level-input" type="number" min="1" max="90" value="1"></label>
+    <label class="ctl">守密人等级 <input id="keeper-input" type="number" min="1" max="90" value="1"></label>
+    <button id="btn-start-battle" class="btn primary">开始战斗</button>
+    <button id="btn-pip" class="btn" title="游戏伴随悬浮窗（手牌数值/爆发时机/AI问答）">🪟 悬浮窗</button>
+    <button id="btn-collector" class="btn" title="数据采集悬浮窗（怪物/卡牌/面板实测记录）">📋 采集</button>
+    <button id="btn-map" class="btn" title="地图沙盘（六边形探索图：怪物/事件/商店/门扉）">🗺地图</button>
+    <button id="btn-whale" class="btn" title="氪佬模式：新增唤醒体按理论最高配置，点击同时拉满现有">🐋氪佬</button>
+    <button id="btn-reset" class="btn">重置</button>
+    <button id="btn-mechanics" class="btn warn">机制面板</button>
+  </div>
+</header>
+
+<!-- ======= 造物栏 ======= -->
+<div id="relic-bar">
+  <span class="relic-title">造物</span>
+  <div id="relic-slots"></div>
+  <button id="btn-relic-manage" class="mini-btn">管理造物</button>
+  <span id="team-stats-chip" class="dim" title="队伍属性：来自角色/命轮/密契/造物汇总（点击查看明细）" style="margin-left:auto;cursor:pointer"></span>
+</div>
+
+<!-- ======= 主体三栏 ======= -->
+<main id="layout">
+
+  <!-- 左：搜索/添加面板 -->
+  <aside id="search-panel">
+    <div class="panel-title">搜索与添加</div>
+    <div class="tabs" id="search-tabs">
+      <button class="tab active" data-tab="characters">唤醒体</button>
+      <button class="tab" data-tab="cards">卡牌</button>
+      <button class="tab" data-tab="enemies">怪物</button>
+    </div>
+    <input id="search-input" type="text" placeholder="输入关键字搜索…">
+    <div id="search-results" class="search-results"></div>
+  </aside>
+
+  <!-- 中：战场（我方左列 · 敌方右列，默认从上往下索敌） -->
+  <section id="battlefield">
+    <div class="zone" id="ally-zone">
+      <div class="zone-title">我方 <span class="zone-hint">（队伍共享生命；点角色卡「配置」调养成）</span></div>
+      <div id="team-hp-box">
+        <div id="team-resources" class="team-resources"></div>
+        <div class="bar-track team-hp-track">
+          <div class="bar-fill hp" id="team-hp-fill" style="width:100%"></div>
+          <div class="bar-text" id="team-hp-text">队伍生命 0 / 0</div>
+        </div>
+        <div id="team-shield-chip"></div>
+      </div>
+      <div class="units column" id="ally-list"></div>
+    </div>
+    <div class="zone" id="enemy-zone">
+      <div class="zone-title">敌方 <span class="zone-hint">（从上往下依次受击）</span></div>
+      <div class="units column" id="enemy-list"></div>
+    </div>
+  </section>
+
+  <!-- 右：战斗日志 -->
+  <aside id="log-panel">
+    <div class="panel-title">战斗日志 <button id="btn-clear-log" class="mini-btn">清空</button></div>
+    <div id="log-list"></div>
+  </aside>
+</main>
+
+<!-- ======= 底部：手牌 ======= -->
+<footer id="hand-zone">
+  <div class="resource-col">
+    <div class="res-chip" id="energy-display" title="算力：每回合初始5点，出牌消耗，上限10">算力 -</div>
+    <div class="res-chip chip-btn" id="silver-display" title="银钥能量：满1000点亮钥令。点击打开钥令面板（携带钥令/释放/尘封旧忆/银钥觉醒）">银钥 0/1000</div>
+  </div>
+  <div class="pile-wrap">
+    <div class="pile" id="draw-pile">牌堆<br><b>0</b></div>
+  </div>
+  <div id="hand-list"></div>
+  <div class="end-col">
+    <div class="rollback-row" title="回到第几回合开始（含当时手牌）">
+      <select id="rollback-select" class="rollback-select"></select>
+      <button id="btn-rollback" class="btn" disabled>回溯</button>
+    </div>
+    <button id="btn-end-turn" class="btn primary end-btn" disabled>回合结束</button>
+    <div class="pile-row">
+      <div class="pile" id="discard-pile">弃牌<br><b>0</b></div>
+      <div class="pile" id="exhaust-pile">消除<br><b>0</b></div>
+    </div>
+  </div>
+</footer>
+
+
+<!-- 地图沙盘面板（与采集窗数据互通） -->
+<div id="map-panel" class="map-panel" style="display:none">
+  <div class="map-head">
+    <span style="color:var(--gold)">🗺 地图沙盘</span>
+    <button class="mini-btn" data-mode="walk" title="点击相邻格移动；怪物格=进入战斗">行走</button>
+    <button class="mini-btn" data-mode="cycle" title="点空位加格/循环内容">放内容</button>
+    <button class="mini-btn" data-mode="once" title="切换格子只走一次">只走一次</button>
+    <button class="mini-btn" data-mode="del" title="点格子删除">删除</button>
+    <button class="mini-btn" data-mode="name" title="给怪物格命名">命名</button>
+    <button id="map-close" class="mini-btn" style="margin-left:auto">✕关闭</button>
+    <button id="col-mode-edit" class="mini-btn" title="编辑地块：添加/右键选类型/双击填内容">沙盘</button>
+    <button id="col-mode-use" class="mini-btn" title="按格子行走：点击相邻格移动">使用</button>
+    <button id="col-level-save" class="mini-btn" title="打包地图+关联战斗记录为关卡 JSON（复制到剪贴板，可分享）">📦存关卡</button>
+    <button id="col-level-load" class="mini-btn" title="粘贴关卡 JSON：导入地图，并以关卡内版本替换同号战斗">📥入关卡</button>
+    <button id="col-keys" class="mini-btn" style="display:none" title="锈蚀钥匙：事件获得，最多一把，开门不消耗">🔑无</button>
+    <span id="col-map-shift" class="mini-tools" style="display:none">整图平移
+      <input id="col-shift-dx" class="col-in" style="flex:0 0 40px" value="0" title="行偏移（正=向下）">
+      <input id="col-shift-dy" class="col-in" style="flex:0 0 40px" value="0" title="列偏移（正=向右）">
+      <button id="col-map-shift-go" class="mini-btn" title="全部格子按行/列偏移平移（越界丢弃）">↦平移</button>
+    </span>
+  </div>
+  <div class="map-info" id="map-info"></div>
+  <div class="dim" id="col-map-hint" style="padding:2px 8px;font-size:10px"></div>
+  <div class="hexmap-wrap"><div class="hexmap" id="col-hexmap"></div></div>
+  <div id="col-status" class="dim" style="padding:2px 8px;font-size:11px;min-height:16px"></div>
+</div>
+<div id="modal-root"></div>
+
+<!-- ======= 数据层（顺序不可调换：词条→buff→角色→卡牌→怪物→养成） ======= -->
+<script src="data/terms.js"></script>
+<script src="data/buffs.js"></script>
+<script src="data/growth.js"></script>
+<script src="data/wiki.js"></script>
+<script src="data/wiki-wheels.js"></script>
+<script src="data/characters.js"></script>
+<script src="data/cards.js"></script>
+<script src="data/enemies.js"></script>
+<script src="data/fatewheels.js"></script>
+<script src="data/pacts.js"></script>
+<script src="data/yogens.js"></script>
+<script src="data/realms.js"></script>
+<script src="data/relics.js"></script>
+<script src="data/personal/characters.js"></script>
+<script src="data/personal/fatewheels.js"></script>
+
+<!-- ======= 引擎 ======= -->
+<script src="js/engine/state.js"></script>
+<script src="js/engine/buffs.js"></script>
+<script src="js/engine/cards.js"></script>
+<script src="js/engine/damage.js"></script>
+<script src="js/engine/tentacle.js"></script>
+<script src="js/engine/wheels.js"></script>
+<script src="js/engine/turn.js"></script>
+<script src="js/engine/yogen.js"></script>
+
+<!-- ======= UI ======= -->
+<script src="js/ui/log.js"></script>
+<script src="js/ui/board.js"></script>
+<script src="js/ui/hand.js"></script>
+<script src="js/ui/search.js"></script>
+<script src="js/ui/gear.js"></script>
+<script src="js/ui/yogen.js"></script>
+<script src="js/ui/mechanics.js"></script>
+<script src="js/ai/advisor.js"></script>
+<script src="js/ai/executor.js"></script>
+<script src="js/ui/pip.js"></script>
+<script src="lib/html2canvas.min.js"></script>
+<script src="js/ui/hexmap.js"></script>
+<script src="js/ui/map.js"></script>
+<script src="js/ui/collector.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "baseUrl": "https://open.bigmodel.cn/api/paas/v4",
+  "apiKey": "在这里填入你的API Key",
+  "model": "glm-4.7"
+}
