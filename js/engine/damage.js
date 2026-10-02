@@ -59,6 +59,11 @@ const Damage = {
       const wm = Wheels.combatMods(source);
       /* 灵塑专属（T41）：同措辞组并入（基础伤害→basePlain / 打击基础伤害→strike，组内加算） */
       if (typeof Spirit !== "undefined") Spirit.mergeCombat(source, card, wm.groups);
+      /* 固有天赋（T40）：attrCard 族基础伤害加成（卡茜亚/詹金）并入 basePlain 同组加算 */
+      if (typeof State.talentCardFlatPct === "function") {
+        const tFlat = State.talentCardFlatPct(source, card);
+        if (tFlat > 0) wm.groups.basePlain.pct += tFlat;
+      }
       const isStrike = card && /^(基础)?打击$/.test(card.name || "");
       const isBurst = card && card.type === "狂气爆发";
       const used = [wm.groups.baseCard, wm.groups.basePlain, wm.groups.cmdBase];

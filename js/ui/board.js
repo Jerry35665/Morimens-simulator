@@ -62,7 +62,7 @@ const UIBoard = {
 
     let html = `<div class="u-head">
       <span class="u-name">${u.def.name}</span>
-      <span class="u-lv">Lv${u.level} · ${u.def.rarity} · ${u.def.realm} · ${u.def.role}</span>
+      <span class="u-lv">Lv${u.level} · ${u.def.rarity} · ${State.effectiveRealm(u.def)} · ${u.def.role}</span>
     </div>
     <div class="u-menu">
       <button title="养成配置：等级/启灵/灵塑适性/内在灵格/命轮/密契" onclick="event.stopPropagation();UIGear.open('${u.uid}')">⚙配置</button>

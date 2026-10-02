@@ -196,7 +196,7 @@ const Wheels = {
   onStrikePlay(card, owner) {
     const b = State.battle;
     if (!b || !owner || !card) return;
-    const isStrike = /^(基础)?打击$/.test(card.name || "");
+    const isStrike = Cards.isStrikeCard(card);   // T38 C：视为「打击」卡同触发打击命轮
     const isDefend = /^(基础)?防御$/.test(card.name || "");
     if (!isStrike && !isDefend) return;   // 四期：放行打击+防御（苦咒缚/切割/行囊）
     for (const d of this.equipped(owner)) {

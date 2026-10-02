@@ -59,6 +59,72 @@ const State = {
     return realm;
   },
 
+  /* 神界域变体（T38 E 框架层）：4 名特殊唤醒体在队时把基础界域替换为变体界域
+   * （原初·混沌=蚀灭·萝坦 / 晦暝·深海=诞妄·墨菲 / 繁育·血肉=沙耶 / 奇点·超维=阿拉克涅）。
+   * 现阶段：身份判定+单位卡展示+混编仍按基础界域组（realmGroup 不变，原初·混沌等仍属混沌组）；
+   * 各变体专属机制（原初钥令替换/晦暝触腕姿态/繁育狂热/奇点信标）未建模，全文见 data/realms.js variants */
+  variantRealmKey(defName) {
+    const vs = (window.DBF && DBF.realms && DBF.realms.variants) || {};
+    for (const k of Object.keys(vs)) if (vs[k].char === defName) return k;
+    return null;
+  },
+  effectiveRealm(def) {
+    return this.variantRealmKey(def && def.name) || (def && def.realm) || "";
+  },
+
+  /* 天赋实装钩子（T38 F 框架层）：charId → 结构化键；引擎结算点查询此表，未登记角色=天赋未实装
+   * （全文仍在 characters.js def.talent / DATA-TODO）。
+   * char_doll 灵知解构：每1点狂气回充等级，「外域手术」「等价交换」回复+0.5%——✅已由游戏锚点证实
+   * （2026-10-03 用户三次校准：卡面44=ceil(ceil(102×39.9%)×1.072) 含天赋；heal op 与 describe 双侧消费）。
+   * 灵塑专属：通用三维已实装（collectStatMods +3%/级）；专属逐级表 getSpiritAdaptInfo 仅展示，
+   * 逐角色实装时在此登记结构化键（按用户常用队列分批） */
+  TALENT_HOOKS: {
+    char_doll: { healUpPerGuku: 0.005 },
+    /* ---- T40 夜间批（2026-10-03）：attrCard 族=「自身/命轮/密契每 1 点 attr 属性→卡牌 cards[] 效果提高 perPoint」----
+     * attr=DEEPEN_TERMS 同名 stats 键（critRate/realmMastery/blackImprint/deathResist/silverKeyCharge/damageBoost/gukuRecharge）
+     * attrCardFlat→②.5 basePlain 组（damage.js 并入）；attrCardCritOnPlay→打出卡后临时暴击率+暴伤（cards.js play 挂点）；
+     * attrCardGuku→该卡狂气获得量 +attr值×perPoint 点（cards.js guku 结点）；silverKeyFlat→collectStatMods 面板银充 +N */
+    char_kasia:  { attrCardFlat: { cards: ["魔术嘉年华"], attr: "realmMastery", perPoint: 0.2 } },
+    char_jenkin: { attrCardFlat: { cards: ["基础打击", "布朗出动"], attr: "critRate", perPoint: 2 } },
+    char_d03:    { attrCardCritOnPlay: { cards: ["星彩极光"], attr: "blackImprint", perPoint: 0.15 } },
+    char_d08:    { attrCardCritOnPlay: { cards: ["电磁爆破"], attr: "silverKeyCharge", perPoint: 0.5 } },
+    char_o08:    { attrCardGuku: { cards: ["基础打击", "基础防御"], attr: "deathResist", perPoint: 0.03 } },
+    char_b04:    { attrCardGuku: { cards: ["基础防御"], attr: "critRate", perPoint: 0.2 } },
+    char_ramona_timeworn: { silverKeyFlat: 2.5 },   // 心与银的共振：额外+2.5 银充（同调率×0.5 部分=ally 无 sync 字段，登记未实现）
+    char_ramona: { silverKeyFlat: 2.5 },
+  },
+
+  /* ---- T40 天赋钩子消费助手（挂点：damage.js ②.5 / cards.js play+guku / collectStatMods） ---- */
+  talentAttr(unit, attr) { return (unit && unit.stats && unit.stats[attr]) || 0; },
+
+  talentCardFlatPct(source, card) {
+    if (!source || !card || !source.def) return 0;
+    const h = this.TALENT_HOOKS[source.def.id];
+    if (!h || !h.attrCardFlat) return 0;
+    if (h.attrCardFlat.cards.indexOf(card.name || "") < 0) return 0;
+    return (this.talentAttr(source, h.attrCardFlat.attr) || 0) * h.attrCardFlat.perPoint;
+  },
+
+  talentOnPlay(source, card) {
+    if (!source || !card || !source.def) return;
+    const h = this.TALENT_HOOKS[source.def.id];
+    if (!h || !h.attrCardCritOnPlay) return;
+    if (h.attrCardCritOnPlay.cards.indexOf(card.name || "") < 0) return;
+    const pts = Math.round((this.talentAttr(source, h.attrCardCritOnPlay.attr) || 0) * h.attrCardCritOnPlay.perPoint * 10) / 10;
+    if (pts <= 0) return;
+    Buffs.add(source, "buff_crit_up", pts, null, "天赋·" + source.def.name);
+    Buffs.add(source, "buff_critdmg_up", pts, null, "天赋·" + source.def.name);
+    Log.add(`🌟 天赋【${source.def.name}】：打出「${card.name}」获得 ${pts}% 临时暴击率与暴击伤害`, "sys");
+  },
+
+  talentGukuBonus(source, card) {
+    if (!source || !card || !source.def) return 0;
+    const h = this.TALENT_HOOKS[source.def.id];
+    if (!h || !h.attrCardGuku) return 0;
+    if (h.attrCardGuku.cards.indexOf(card.name || "") < 0) return 0;
+    return (this.talentAttr(source, h.attrCardGuku.attr) || 0) * h.attrCardGuku.perPoint;
+  },
+
   /* ---------- 数据查找 ---------- */
   getChar(id)   { return DBF.characters.find(c => c.id === id); },
   getCard(id)   { return DBF.cards.find(c => c.id === id); },
@@ -332,6 +398,9 @@ const State = {
       const per = DBF.spiritAdaptPerLv || { hpPct: 3, attackPct: 3, defensePct: 3 };
       mods.push({ from: `灵塑适性 Lv${ad}（面板不显示、实战生效）`, hpPct: per.hpPct * ad, attackPct: per.attackPct * ad, defensePct: per.defensePct * ad });
     }
+    /* 固有天赋（T40）：silverKeyFlat（拉蒙娜「心与银的共振」额外+2.5 银充；同调率部分未实现登记） */
+    const tkS = this.TALENT_HOOKS[ally.def && ally.def.id];
+    if (tkS && tkS.silverKeyFlat) mods.push({ from: `天赋·${ally.def.name}`, silverKeyCharge: tkS.silverKeyFlat });
     /* 造物个人属性键：暴击率/爆伤/银充对每名唤醒体生效（平坦加成，进 flat 汇总）；
      * noRelics=true 供裸装对照行用（裸装=无装备口径） */
     if (!opts.noRelics) {

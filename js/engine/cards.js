@@ -209,6 +209,8 @@ const Cards = {
     }
     if (wasFirstCard) b.firstCardPlayed = true;
     b.playedCount = (b.playedCount || 0) + 1;   // T34 条件边：「出牌>=N」计数（爆发卡走 releaseBurst 不计）
+    /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
+    if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
     inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
     /* 变身（T38 D）：transformAfter.plays 次后变为 into（鲜血链条3次→嗜血链球）；无 plays=打出即变回 */
     const tr = card.transformAfter;
@@ -483,7 +485,11 @@ const Cards = {
          * perSpend（T32 追加批：不定壁垒）：狂气 = perSpend × X 费实耗算力（b.xSpend） */
         const lvBonus = (card && /^(基础)?(打击|防御)$/.test(card.name || "")) ? (source.cardLv || 1) - 1 : 0;
         const lvGrow = (eff.perLv || 0) * (source.cardLv || 1) - (eff.perLv || 0);
-        const gv = eff.perSpend != null ? eff.perSpend * (State.battle.xSpend || 0) : eff.value;
+        let gv = eff.perSpend != null ? eff.perSpend * (State.battle.xSpend || 0) : eff.value;
+        /* 固有天赋（T40）：attrCardGuku 族——珊/索蕾尔「每 1 点 X 属性，基础卡狂气 +Y 点」 */
+        if (typeof State.talentGukuBonus === "function") {
+          gv += State.talentGukuBonus(source, card);
+        }
         source.guku = Math.min(source.gukuMax || 100, source.guku + gv + lvBonus + lvGrow);
         break;
       }

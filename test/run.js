@@ -1647,6 +1647,57 @@ function runAllTests() {
       "治疗:" + (b27.team.hp - hp27b));
   }
 
+  console.log("== 8.25 固有天赋（T40）==");
+  {
+    /* ① 卡茜亚：界域精通→魔术嘉年华 basePlain（attrCardFlat） */
+    State.newBattle();
+    const ka = State.addAlly("char_kasia"); ka.spiritAdaptLv = 0; ka.fatewheels = []; ka.pacts = []; ka.stats = ka.stats || {}; ka.stats.damageBoost = 0; ka.stats.critRate = 0;
+    ka.stats.realmMastery = 3;
+    State.addEnemy((DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id);
+    Turn.startBattle();
+    const eK = State.battle.enemies[0];
+    const dKa = Damage.compute({ source: ka, target: eK, card: { name: "魔术嘉年华", type: "攻击" }, eff: { value: 100 } }).final;
+    check("T40 卡茜亚 界域精通3点→魔术嘉年华+0.6%（100→101）", dKa === 101, "实际:" + dKa);
+    /* ② 詹金：暴击率→基础打击 basePlain（attrCardFlat 自洽断言：暴击率读面板） */
+    State.newBattle();
+    const je = State.addAlly("char_jenkin"); je.spiritAdaptLv = 0; je.fatewheels = []; je.pacts = []; je.stats = je.stats || {}; je.stats.damageBoost = 0;
+    State.addEnemy((DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id);
+    Turn.startBattle();
+    const eJ = State.battle.enemies[0];
+    const dJe = Damage.compute({ source: je, target: eJ, card: { name: "基础打击", type: "攻击" }, eff: { value: 100 } }).final;
+    const expJe = Math.ceil(100 * (1 + (je.stats.critRate || 0) * 2 / 100));
+    check("T40 詹金 暴击率×2→基础打击（自洽：100×(1+暴击率×2%)）", dJe === expJe, `实际:${dJe} 预期:${expJe}（暴击率${je.stats.critRate}）`);
+    /* ③ 艾瑞卡：银充→电磁爆破打出后临时暴击率/暴伤（attrCardCritOnPlay） */
+    State.newBattle();
+    const er2 = State.addAlly("char_d08"); er2.spiritAdaptLv = 0; er2.fatewheels = []; er2.pacts = []; er2.stats = er2.stats || {}; er2.stats.silverKeyCharge = 15;
+    State.addEnemy((DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id);
+    Turn.startBattle();
+    State.talentOnPlay(er2, { name: "电磁爆破", type: "技能" });
+    const cu = er2.buffs.find(x => x.defId === "buff_crit_up");
+    check("T40 艾瑞卡 银充15×0.5→电磁爆破临时暴击率/暴伤+7.5", !!cu && cu.stacks === 7.5, "实际:" + (cu ? cu.stacks : "无"));
+    /* ④ 珊：死抗→基础卡狂气加成点数（attrCardGuku） */
+    State.newBattle();
+    const sh = State.addAlly("char_o08"); sh.spiritAdaptLv = 0; sh.fatewheels = []; sh.pacts = []; sh.stats = sh.stats || {}; sh.stats.deathResist = 8;
+    State.addEnemy((DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id);
+    Turn.startBattle();
+    check("T40 珊 死抗8×0.03→基础卡狂气+0.24", State.talentGukuBonus(sh, { name: "基础打击" }) === 0.24,
+      "实际:" + State.talentGukuBonus(sh, { name: "基础打击" }));
+    /* ⑤ 拉蒙娜（环行）：心与银的共振 +2.5 银充（strip 后重算，对比无天赋基准） */
+    State.newBattle();
+    const rm = State.addAlly("char_ramona_timeworn"); rm.spiritAdaptLv = 0; rm.fatewheels = []; rm.pacts = [];
+    State.recalcAllyStats(rm);
+    State.addEnemy((DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id);
+    Turn.startBattle();
+    const withTalent = rm.stats.silverKeyCharge;
+    delete State.TALENT_HOOKS["char_ramona_timeworn"];
+    State.recalcAllyStats(rm);
+    const withoutTalent = rm.stats.silverKeyCharge;
+    State.TALENT_HOOKS["char_ramona_timeworn"] = { silverKeyFlat: 2.5 };
+    State.recalcAllyStats(rm);
+    check("T40 环行·拉蒙娜 心与银的共振 银充+2.5（strip 重算对比）", withTalent - withoutTalent === 2.5,
+      `有:${withTalent} 无:${withoutTalent}`);
+  }
+
   console.log("== 8.26 灵塑专属（T41）==");
   {
     const dummyId = (DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id;
