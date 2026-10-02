@@ -113,11 +113,20 @@ const Tentacle = {
     return sum;
   },
 
-  /* ---------- 单条触腕攻击：基础值 → ④虚弱 → ⑤易伤 → ⑥触腕暴击 → 落账 ---------- */
-  strike(target, mult = 1, label = "触腕") {
+  /* ---------- 单条触腕攻击：基础值 → ④虚弱 → ⑤易伤 → ⑥触腕暴击 → 落账 ----------
+   * src（T41）：触发本次触腕攻击的成员（怒涛追击传入）；E6 实测成员触伤词条不进自动触腕，
+   * 因此仅 src 有值时应用 Spirit.tentacleSrcMult（自动触腕 src=null 不吃词条） */
+  strike(target, mult = 1, label = "触腕", src = null) {
     const b = State.battle;
     if (!target || target.hp <= 0 || !b || !b.tentacle) return null;
-    const base = this.singleDamage() * mult;
+    let base = this.singleDamage() * mult;
+    /* 灵塑成员触伤词条（T41）：希莱斯特/弥利亚姆——仅成员触发的触腕攻击 ×(1+X%) */
+    if (typeof Spirit !== "undefined" && src) {
+      const tm = Spirit.tentacleSrcMult(src);
+      if (tm > 1) {
+        base = Math.ceil(base * tm);
+      }
+    }
     const steps = [{
       label: "① 触腕基础", value: base,
       note: `E6 v5：Σ成员ceil(攻×(1+0.03灵塑))×0.095×(1+Σ面板强效%)${mult !== 1 ? `×${mult}` : ""}（+共生/力量加算）`
@@ -218,11 +227,11 @@ const Tentacle = {
     }
   },
 
-  /* ---------- 怒涛：造成主动伤害后使 1 条触腕以 50% 触腕伤害追击 ---------- */
-  onAllyDeal(target) {
+  /* ---------- 怒涛：造成主动伤害后使 1 条触腕以 50% 触腕伤害追击（src=触发成员，灵塑触伤词条随行） ---------- */
+  onAllyDeal(target, src = null) {
     const b = State.battle;
     if (!b || !b.tentacle || b.tentacle.stance !== "怒涛" || b.tentacle.count <= 0) return;
-    this.strike(target, 0.5, "怒涛触发");
+    this.strike(target, 0.5, "怒涛触发", src);
   },
 
   /* ---------- 姿态切换（UI：每回合 1 次）---------- */

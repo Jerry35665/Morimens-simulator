@@ -57,6 +57,8 @@ const Damage = {
      * 装备常驻（ignoreBuffs 也生效）；✅触腕不吃命轮乘区（2026-10-01 用户实测） */
     if (typeof Wheels !== "undefined" && !ignoreBuffs) {
       const wm = Wheels.combatMods(source);
+      /* 灵塑专属（T41）：同措辞组并入（基础伤害→basePlain / 打击基础伤害→strike，组内加算） */
+      if (typeof Spirit !== "undefined") Spirit.mergeCombat(source, card, wm.groups);
       const isStrike = card && /^(基础)?打击$/.test(card.name || "");
       const isBurst = card && card.type === "狂气爆发";
       const used = [wm.groups.baseCard, wm.groups.basePlain, wm.groups.cmdBase];
@@ -86,6 +88,15 @@ const Damage = {
         const flat = mods.reduce((s, m) => s + m.total, 0);
         base += flat;
         base = Math.ceil(base);
+        /* 灵塑专属（T41）：缚身锁链「额外享受X%力量加成」——力量点数×X% 加算（血链·希洛） */
+        if (typeof Spirit !== "undefined" && flat > 0) {
+          const sfb = Spirit.strFlatBonus(source, card, flat);
+          if (sfb > 0) {
+            base += sfb;
+            base = Math.ceil(base);
+            steps.push({ label: "③.2 灵塑·力量加成附加", value: base, factorText: `+${sfb}`, note: "缚身锁链额外享受灵塑X%力量点数" });
+          }
+        }
         steps.push({
           label: "③ 力量区", value: base, mods,
           factorText: `${flat >= 0 ? "+" : ""}${flat}`,
@@ -169,6 +180,14 @@ const Damage = {
     if (!ignoreBuffs && source.buffs) {
       const fmods = Buffs.collect(source, "finalBoostPct");
       let f = fmods.reduce((s, m) => s + m.total, 0);
+      /* 灵塑专属（T41）：打击最终伤害提高（莉莉，首领战翻倍）并入本区——⚠本区 f 为小数语义（0.35=+35%） */
+      if (typeof Spirit !== "undefined") {
+        const sf = Spirit.finalAdd(source, card, target);
+        if (sf > 0) {
+          f += sf / 100;
+          steps.push({ label: "⑥.5 灵塑·打击最终伤害", value: 0, factorText: `+${sf}%`, note: "并入最终伤害区（E4 独立区）" });
+        }
+      }
       if (card && card.type === "狂气爆发" && typeof Wheels !== "undefined") {
         const bf = Wheels.combatMods(source).burstFinal;
         if (bf > 0) {
@@ -239,9 +258,9 @@ const Damage = {
         this.applyRawDamage(target, burn, `${def.name} 引爆`);
       }
     }
-    /* 怒涛姿态（触腕 T7）：造成主动伤害后使 1 条触腕以 50% 触腕伤害追击目标 */
+    /* 怒涛姿态（触腕 T7）：造成主动伤害后使 1 条触腕以 50% 触腕伤害追击目标（传来源=成员触腕词条生效路径） */
     if (typeof Tentacle !== "undefined" && source && source.side === "ally") {
-      Tentacle.onAllyDeal(target);
+      Tentacle.onAllyDeal(target, source);
     }
     return r;
   },

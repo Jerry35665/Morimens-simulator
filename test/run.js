@@ -1436,6 +1436,316 @@ function runAllTests() {
       "pactDetails已填:" + (w19 && w19.pactDetails.filter(Boolean).length));
   }
 
+  /* ---- T38 系统性排查批（2026-10-03 用户六项反馈，序 C→D→B→A→E→F）---- */
+  console.log("== 8.23 T38 系统性排查批 ==");
+  {
+    /* C 减费家族：打击计数泛化——视为「打击」同计、全队共享（卡面无归属限定） */
+    State.newBattle();
+    State.addAlly("char_rotan", 70);
+    State.addAlly("char_ogilvy", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b23 = State.battle;
+    Cards.generate("card_ogilvy_strike");
+    Cards.play(b23.piles.hand.find(c => c.defId === "card_ogilvy_strike").uid, b23.enemies[0].uid);
+    Cards.generate("card_rotan_strike");
+    Cards.play(b23.piles.hand.find(c => c.defId === "card_rotan_strike").uid, b23.enemies[0].uid);
+    check("T38C 打击计数全队共享（队友1+自己1=2）", b23.strikesPlayed === 2, "实际:" + b23.strikesPlayed);
+    Cards.generate("card_rotan_blade");
+    b23.energy = 9;
+    Cards.play(b23.piles.hand.find(c => c.defId === "card_rotan_blade").uid, b23.enemies[0].uid);
+    check("T38C 桀骜之刃 打2打击后费用=1（3-2 验收案例）", 9 - b23.energy === 1, "实耗:" + (9 - b23.energy));
+    Cards.generate("card_rc_fallen");
+    b23.energy = 9;
+    Cards.play(b23.piles.hand.filter(c => c.defId === "card_rc_fallen").pop().uid, b23.enemies[0].uid);
+    check("T38C 长刃·陨(视为打击)打出后计数+1", b23.strikesPlayed === 3, "实际:" + b23.strikesPlayed);
+    Cards.generate("char_c17_s1");
+    const hbp23 = b23.piles.hand.find(c => c.defId === "char_c17_s1");
+    if (hbp23) Cards.play(hbp23.uid, null);
+    check("T38C 人间爆破(视为打击)计数+1", b23.strikesPlayed === 4, "实际:" + b23.strikesPlayed);
+    Cards.generate("card_rc_fallen");
+    b23.energy = 9;
+    Cards.play(b23.piles.hand.filter(c => c.defId === "card_rc_fallen").pop().uid, b23.enemies[0].uid);
+    check("T38C 长刃·陨按累计打击数减费 4-4=0（打击/视为打击全计入累计）", 9 - b23.energy === 0, "实耗:" + (9 - b23.energy));
+
+    /* D 回响+打出次数变身（鲜血链条↔嗜血链球）：按实例打出次数计，不按伤害段计 */
+    State.newBattle();
+    State.addAlly("char_helot_catena", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b24 = State.battle;
+    b24.energy = 9;
+    Cards.generate("card_hc_fresh");
+    const h24 = b24.piles.hand.find(c => c.defId === "card_hc_fresh");
+    Cards.play(h24.uid, b24.enemies[0].uid);
+    check("T38D 回响：鲜血链条打出后回到手牌（不入弃牌堆）", b24.piles.hand.includes(h24));
+    Cards.play(h24.uid, b24.enemies[0].uid);
+    check("T38D 打出2次仍是鲜血链条（变身按打出次数计数）", h24.defId === "card_hc_fresh" && h24.playCount === 2);
+    Cards.play(h24.uid, b24.enemies[0].uid);
+    check("T38D 打出3次变身为嗜血链球（同实例、计数清零）", h24.defId === "card_hc_ball" && h24.playCount === 0);
+    Cards.play(h24.uid, b24.enemies[0].uid);
+    check("T38D 嗜血链球打出后变回鲜血链条", h24.defId === "card_hc_fresh");
+    check("T38D 变身/回响全程不进弃牌堆", b24.piles.discard.length === 0);
+
+    /* B 目标范围：螺湮逆流/丧钟遥鸣 虚弱+易伤=全体1层（T38 B 修正） */
+    State.newBattle();
+    State.addAlly("char_o02", 70);
+    State.addEnemy("enemy_dummy");
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b25 = State.battle;
+    Cards.generate("char_o02_s1");
+    b25.energy = 9;
+    Cards.play(b25.piles.hand.find(c => c.defId === "char_o02_s1").uid, null);
+    check("T38B 螺湮逆流 虚弱+易伤=全体各1层", b25.enemies.every(e => {
+      const w = e.buffs.find(x => x.defId === "debuff_weak"), v = e.buffs.find(x => x.defId === "debuff_vul");
+      return w && w.stacks === 1 && v && v.stacks === 1;
+    }), b25.enemies.map(e => e.buffs.map(x => x.defId + "×" + x.stacks).join("|")).join(" / "));
+    Cards.generate("char_c08_s2");
+    b25.energy = 9;
+    Cards.play(b25.piles.hand.find(c => c.defId === "char_c08_s2").uid, null);
+    check("T38B 丧钟遥鸣 虚弱+易伤=全体各1层（叠加坡次）", b25.enemies.every(e => {
+      const w = e.buffs.find(x => x.defId === "debuff_weak"), v = e.buffs.find(x => x.defId === "debuff_vul");
+      return w && w.stacks === 2 && v && v.stacks === 2;
+    }));
+
+    /* A 卡面数值全量机审（T38 A）：text 公式 vs effects 值匹配反向审计。
+     * 匹配规则：每个 scaleAttack/Defense/Constitution 效果在 text 中找到公式满足
+     *   base==eBase（文本 Lv1 形）或 base+perLv==eBase（文本 A+B×级 形，引擎 resolve=base+perLv×(级-1)）；
+     * 基础打击/防御 文本无等级项+perLv>0=T32 已核实口径；中毒层数/力量获得公式不入损伤配对。
+     * 标注清单（gamekee 旧文本 vs 灰机口径，T37⑭/⑮ 已全量核验灰机权威，不修）：深渊号令/隔空取物/集结鼠群/
+     * 断颈一击/不耐的施舍/苍白回旋——后两者文本 10%/12% 为旧 Lv1 值，灰机线 (10+2.5×级)/(12+3×级) 与效果 12.5+2.5/15+3 同线 */
+    const A_TEXT_STALE = new Set(["card_tulu_abyss", "card_kasia_telekinesis", "card_jenkin_rats", "card_dafdel_necksnap", "card_agrippa_alms", "card_agrippa_spiral"]);
+    const A_KEY = { damage: "scaleAttack", block: "scaleDefense", heal: "scaleConstitution" };
+    const A_RE = {};
+    for (const [op, word] of [["damage", "攻击力"], ["block", "防御力"], ["heal", "体质"]]) {
+      A_RE[op] = new RegExp(word + "\\*\\s*[（(]?\\s*([0-9.]+)(?:\\s*\\+\\s*([0-9.]+)\\s*\\*\\s*技能等级|\\s*\\+\\s*技能等级\\s*\\*\\s*([0-9.]+))?\\s*[）)]?\\s*%(?!\\s*层)", "g");
+    }
+    const aDiffs = [];
+    for (const c of DBF.cards) {
+      const txt = c.text || "";
+      if (!c.effects || !c.effects.length || c.stances) continue;
+      const isBasic = /^(基础)?(打击|防御)$/.test(c.name || "");
+      for (const [op, r] of Object.entries(A_RE)) {
+        r.lastIndex = 0;
+        const effs = c.effects.filter(e => e.op === op && e[A_KEY[op]] != null);
+        if (!effs.length) continue;
+        const ms = [...txt.matchAll(r)];
+        if (!ms.length) continue;
+        for (const eff of effs) {
+          const eBase = Math.round(eff[A_KEY[op]] * 10000) / 100;
+          const eLv = eff.scalePerLv != null ? Math.round(eff.scalePerLv * 10000) / 100 : 0;
+          const hit = ms.some(m => {
+            const tBase = +m[1], tLv = (m[2] ? +m[2] : (m[3] ? +m[3] : 0));
+            if (Math.abs(tBase - eBase) <= 0.011) return true;                    // 文本=Lv1 值形
+            if (Math.abs(tBase + tLv - eBase) <= 0.011 && Math.abs(tLv - eLv) <= 0.011) return true;   // 文本=A+B×级 形
+            return false;
+          });
+          if (!hit && !(isBasic && eLv > 0)) aDiffs.push(c.id + "|" + op);
+        }
+      }
+    }
+    const aReal = aDiffs.filter(id => !A_TEXT_STALE.has(id.split("|")[0]));
+    check("T38A 机审差异清单归零（含标注清单外零差异）", aReal.length === 0, "差异:" + aReal.join(","));
+    check("T38A 嗜血链球伤害=卡面公式 96+24×级（base 120/级24）", (() => {
+      const e = DBF.cards.find(c => c.id === "card_hc_ball").effects[0];
+      return e.scaleAttack === 1.2 && e.scalePerLv === 0.24;
+    })());
+
+    /* E 四神界域变体（框架层）：身份判定/生效界域/混编仍按基础组 */
+    check("T38E 四神界域身份判定 ×4+普通角色null", State.variantRealmKey("蚀灭·萝坦") === "原初·混沌"
+      && State.variantRealmKey("诞妄·墨菲") === "晦暝·深海"
+      && State.variantRealmKey("沙耶") === "繁育·血肉"
+      && State.variantRealmKey("阿拉克涅") === "奇点·超维"
+      && State.variantRealmKey("朵尔") === null);
+    check("T38E 生效界域替换+混编组保持基础界域",
+      State.effectiveRealm({ name: "蚀灭·萝坦", realm: "混沌" }) === "原初·混沌"
+      && State.effectiveRealm({ name: "朵尔", realm: "混沌" }) === "混沌"
+      && State.realmGroup("原初·混沌") === "混沌" && State.realmGroup("晦暝·深海") === "深海"
+      && State.realmGroup("繁育·血肉") === "血肉" && State.realmGroup("奇点·超维") === "超维");
+
+    /* F 天赋钩子框架验证：显式注入 char_doll 灵知解构（healUpPerGuku）→ 手术回复 ×(1+狂充×0.5%)。
+     * ⚠内置试点已撤下（游戏锚点矛盾：朵尔 persona12/狂充14.4 手术=44 纯卡面公式，见 8.24/state.js 注） */
+    State.newBattle();
+    State.addAlly("char_doll", 80);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b26 = State.battle;
+    const savedHooks = State.TALENT_HOOKS;
+    State.TALENT_HOOKS = { char_doll: { healUpPerGuku: 0.005 } };   // 显式注入，测完恢复
+    const hurt26 = () => { b26.team.hp = Math.max(1, b26.team.hp - 80); };
+    b26.energy = 9;
+    hurt26();
+    Cards.generate("card_doll_surgery");
+    const hpF0 = b26.team.hp;
+    Cards.play(b26.piles.hand.find(c => c.defId === "card_doll_surgery").uid, null);
+    const healUp = b26.team.hp - hpF0;
+    State.TALENT_HOOKS = {};   // 关钩子对照（finally 恢复，防中途异常留脏状态）
+    let healBase = 0;
+    try {
+      b26.energy = 9;
+      hurt26();
+      Cards.generate("card_doll_surgery");
+      const hpF1 = b26.team.hp;
+      Cards.play(b26.piles.hand.find(c => c.defId === "card_doll_surgery").uid, null);
+      healBase = b26.team.hp - hpF1;
+    } finally {
+      State.TALENT_HOOKS = savedHooks;
+    }
+    const gukuF = b26.allies[0].stats.gukuRecharge;
+    check("T38F 天赋钩子框架：注入后回复×(1+狂充×0.5%)", healUp === Math.ceil(healBase * (1 + gukuF * 0.005)),
+      `带钩:${healUp} 裸:${healBase} 狂充:${gukuF}`);
+  }
+
+  /* ---- 外域手术锚点批（2026-10-03 用户三次校准定案：Wiki 基数 15，卡面44已含天赋加成）----
+   * 三段链：pct=(15+3%×(级-1))×1.33(启灵①) → v=ceil(体质×pct) → ×(1+狂充×0.5%)(灵知解构)。
+   * 卡面=面板体质 102、实战=实战体质 133（灵塑实战生效，58=卡面×1.3）。
+   * 镜像用户真实朵尔：Lv70 灵格1 灵塑10 persona12（狂充14.4）cardLv6 */
+  console.log("== 8.24 外域手术锚点批 ==");
+  {
+    State.newBattle();
+    const d27 = State.addAlly("char_doll", 70);
+    d27.personaLv = 12; d27.innerGridLv = 1; d27.spiritAdaptLv = 10; d27.cardLv = 6;
+    d27.enlightenOn = [true, true, true];
+    d27.fatewheels = []; d27.fwStacks = [0, 0]; d27.pacts = [];
+    d27.pactDetails = [null, null, null, null, null, null]; d27.pactSetBound = {};   // 清装备：addAlly 会套用前面小节留下的保存配置（8.22 钳制测试的密契狂充 +2.8 案例）
+    State.recalcAllyStats(d27);
+    check("T38锚点 前置：朵尔狂充=14.4（persona12 深化口径，镜像用户配置）", d27.stats.gukuRecharge === 14.4,
+      "实际:" + d27.stats.gukuRecharge);
+    State.addEnemy("enemy_dummy");
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b27 = State.battle;
+    const sgDef27 = DBF.cards.find(c => c.id === "card_doll_surgery");
+    check("T38锚点 卡面=面板体质×43% → 44（无灵塑）",
+      Cards.describeEffects(sgDef27, d27).join().includes("回复44点生命"),
+      Cards.describeEffects(sgDef27, d27).join("|").slice(0, 60));
+    b27.energy = 9;
+    b27.team.hp = Math.max(1, b27.team.hp - 80);
+    Cards.generate("card_doll_surgery");
+    const hp27 = b27.team.hp;
+    Cards.play(b27.piles.hand.find(c => c.defId === "card_doll_surgery").uid, null);
+    check("T38锚点 外域手术 实战=实战体质×43% → 58（=卡面×1.3 用户实测）", b27.team.hp - hp27 === 58,
+      "实际:" + (b27.team.hp - hp27));
+    check("T38锚点 启灵①虚弱=全体2层", b27.enemies.every(e => {
+      const w = e.buffs.find(x => x.defId === "debuff_weak");
+      return w && w.stacks === 2;
+    }), b27.enemies.map(e => e.buffs.map(x => x.defId + "×" + x.stacks).join("|")).join(" / "));
+    /* 对照：关启灵①后治疗回落 30%（无乘算）→ceil(133×30%)=40→×1.072=43、虚弱本次+1层（上次2层未衰减） */
+    d27.enlightenOn = [false, true, true];
+    b27.energy = 9;
+    b27.team.hp = Math.max(1, b27.team.hp - 80);
+    Cards.generate("card_doll_surgery");
+    const hp27b = b27.team.hp;
+    Cards.play(b27.piles.hand.filter(c => c.defId === "card_doll_surgery").pop().uid, null);
+    check("T38锚点 关启灵①：治疗=ceil(ceil(133×30%)×1.072)=43、虚弱+1层",
+      b27.team.hp - hp27b === 43
+      && b27.enemies.every(e => {
+        const w = e.buffs.find(x => x.defId === "debuff_weak");
+        return w && w.stacks === 3;
+      }),
+      "治疗:" + (b27.team.hp - hp27b));
+  }
+
+  console.log("== 8.26 灵塑专属（T41）==");
+  {
+    const dummyId = (DBF.enemies.find(e => (e.name || "").includes("木桩")) || {}).id;
+    const strip = (a) => { a.fatewheels = []; a.pacts = []; a.stats = a.stats || {}; a.stats.damageBoost = 0; a.stats.critRate = 0; return a; };
+    /* ① 艾瑞卡：开战力量/戒备（点数=ceil(面板×X%)） */
+    State.newBattle();
+    const eri = State.addAlly("char_d08"); eri.spiritAdaptLv = 10; strip(eri);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    check("T41 艾瑞卡 开战力量=ceil(攻×15%)",
+      (() => { const b = eri.buffs.find(x => x.defId === "buff_strength"); return !!b && b.stacks === Math.ceil((eri.stats.attack || 0) * 15 / 100); })(),
+      "实际:" + ((eri.buffs.find(x => x.defId === "buff_strength") || {}).stacks));
+    check("T41 艾瑞卡 开战戒备=ceil(防×3%)",
+      (() => { const g = eri.buffs.find(x => x.defId === "buff_guard"); return !!g && g.stacks === Math.ceil((eri.stats.defense || 0) * 3 / 100); })(),
+      "实际:" + ((eri.buffs.find(x => x.defId === "buff_guard") || {}).stacks));
+    /* ② 环行·拉蒙娜：开战银钥能量=银充×250% */
+    State.newBattle();
+    const ram = State.addAlly("char_ramona_timeworn"); ram.spiritAdaptLv = 10; strip(ram);
+    State.addEnemy(dummyId);
+    const silver0 = State.battle.silver || 0;
+    Turn.startBattle();
+    const expAg = Math.floor((ram.stats.silverKeyCharge || 0) * 250 / 100);
+    check("T41 环行·拉蒙娜 开战银钥能量=银充×250%", State.battle.silver - silver0 === expAg,
+      "实际:" + (State.battle.silver - silver0) + " 预期:" + expAg);
+    /* ③ 戈利亚：基础伤害提高50%（②.5 basePlain 组同组加算） */
+    State.newBattle();
+    const gol = State.addAlly("char_o06"); gol.spiritAdaptLv = 10; strip(gol);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    const e0 = State.battle.enemies[0];
+    const eff100 = { value: 100 };
+    const dWith = Damage.compute({ source: gol, target: e0, card: null, eff: eff100 }).final;
+    gol.spiritAdaptLv = 0;
+    const dWithout = Damage.compute({ source: gol, target: e0, card: null, eff: eff100 }).final;
+    gol.spiritAdaptLv = 10;
+    check("T38F/T41 戈利亚 基础伤害+50%（100→150）", dWith === 150 && dWithout === 100, `实际:${dWith}/${dWithout}`);
+    /* ④ 茉夏：团队打击基础伤害+35%（strike 组，仅打击卡） */
+    State.newBattle();
+    const mo = State.addAlly("char_c17"); mo.spiritAdaptLv = 10; strip(mo);
+    const og = State.addAlly("char_ogilvy"); og.spiritAdaptLv = 0; strip(og);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    const e1 = State.battle.enemies[0];
+    const strikeCard = { name: "打击", type: "攻击" };
+    const dMo = Damage.compute({ source: og, target: e1, card: strikeCard, eff: eff100 }).final;
+    mo.spiritAdaptLv = 0;
+    const dMo0 = Damage.compute({ source: og, target: e1, card: strikeCard, eff: eff100 }).final;
+    mo.spiritAdaptLv = 10;
+    check("T41 茉夏 团队打击基础伤害+35%（100→135）", dMo === 135 && dMo0 === 100, `实际:${dMo}/${dMo0}`);
+    /* ⑤ 血链·希洛：缚身锁链额外享受 X% 力量点数（③区附加） */
+    State.newBattle();
+    const hel = State.addAlly("char_helot_catena"); hel.spiritAdaptLv = 10; strip(hel);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    Buffs.add(hel, "buff_strength", 50, null, "测试");
+    const e2 = State.battle.enemies[0];
+    const dHel = Damage.compute({ source: hel, target: e2, card: { name: "缚身锁链", type: "攻击" }, eff: { value: 100 } }).final;
+    hel.spiritAdaptLv = 0;
+    const dHel0 = Damage.compute({ source: hel, target: e2, card: { name: "缚身锁链", type: "攻击" }, eff: { value: 100 } }).final;
+    hel.spiritAdaptLv = 10;
+    check("T41 血链·希洛 缚身锁链+力量点数×100%（150→200）", dHel === 200 && dHel0 === 150, `实际:${dHel}/${dHel0}`);
+    /* ⑥ 莉莉：打击最终伤害+35%（⑥.5，首领战翻倍） */
+    State.newBattle();
+    const lil = State.addAlly("char_c10"); lil.spiritAdaptLv = 10; strip(lil);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    const e3 = State.battle.enemies[0];
+    const dLil = Damage.compute({ source: lil, target: e3, card: strikeCard, eff: eff100 }).final;
+    e3.def = Object.assign({}, e3.def, { tier: "boss" });
+    const dLilBoss = Damage.compute({ source: lil, target: e3, card: strikeCard, eff: eff100 }).final;
+    check("T41 莉莉 打击最终伤害+35%（100→135）、首领翻倍（→170）", dLil === 135 && dLilBoss === 170, `实际:${dLil}/${dLilBoss}`);
+    /* ⑦ 力量获取乘区（杜勒赛因团队/雷娅自身） */
+    State.newBattle();
+    const du = State.addAlly("char_b10"); du.spiritAdaptLv = 10; strip(du);
+    const og2 = State.addAlly("char_ogilvy"); og2.spiritAdaptLv = 0; strip(og2);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    check("T41 杜勒赛因 力量获取+15%（团队乘区 1.15）", Spirit.strGainMult(og2) === 1.15,
+      "实际:" + Spirit.strGainMult(og2));
+    du.spiritAdaptLv = 0;
+    check("T41 力量乘区随灵塑归零回落 1.0", Spirit.strGainMult(og2) === 1, "实际:" + Spirit.strGainMult(og2));
+    /* ⑧ 触腕成员词条：仅成员触发的触腕（怒涛 src 路径） */
+    State.newBattle();
+    const cel = State.addAlly("char_o09"); cel.spiritAdaptLv = 10; strip(cel);
+    State.addEnemy(dummyId);
+    Turn.startBattle();
+    const b8 = State.battle;
+    b8.tentacle = { count: 1, stance: "潮涌", rally: 0 };
+    const e4 = b8.enemies[0];
+    const hpA = e4.hp;
+    Tentacle.strike(e4, 1, "测试", cel);            // 成员触发 → ×1.5
+    const dCel = hpA - e4.hp;
+    e4.hp = hpA;
+    Tentacle.strike(e4, 1, "测试");                 // 自动触腕（无 src）→ 不吃词条
+    const dAuto = hpA - e4.hp;
+    check("T41 希莱斯特 成员触发触腕×1.5、自动触腕不吃词条（E6 口径）", dCel === Math.ceil(dAuto * 1.5) && dAuto > 0,
+      `成员触发:${dCel} 自动:${dAuto}`);
+  }
+
   renderSummary();
 }
 

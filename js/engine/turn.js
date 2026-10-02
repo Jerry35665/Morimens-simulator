@@ -26,6 +26,8 @@ const Turn = {
     if (typeof Wheels !== "undefined") Wheels.onBattleStart();
     /* 界域系统（血肉熔炉继承/超维空间重置） */
     if (typeof RealmSys !== "undefined") RealmSys.onBattleStart();
+    /* 灵塑专属开战效果（T41）：艾瑞卡力量/戒备、环行·拉蒙娜银钥能量 */
+    if (typeof Spirit !== "undefined") Spirit.onBattleStart(b);
     for (const a of b.allies) {
       /* 疯狂预兆（通用占位效果：战斗开始获5×等级狂气，逐角色词条待录入） */
       if (a.omenLv > 0) {
@@ -49,7 +51,7 @@ const Turn = {
     b.energy = State.ENERGY_PER_TURN + (b.turn === 1 ? (b.pactEnergyBonus || 0) : 0);
     b.yogenCastsThisTurn = 0;   // 钥令每回合释放次数重置（第1次携带/第2次尘封旧忆）
     b.firstCardPlayed = false;  // 魔女宽檐帽首卡标记重置（T8）
-    b.strikesPlayed = {};       // 长刃·陨 discPerStrike 打击计数重置（T32 实测批）
+    b.strikesPlayed = 0;        // discPerStrike 打击计数重置（T32 实测批；T38 C 改全队共享数值型）
     if (typeof Tentacle !== "undefined") Tentacle.onTurnStart();   // 触腕姿态每回合开始重置为潮涌
     if (typeof RealmSys !== "undefined") RealmSys.onTurnStart();   // 血肉融合/熔炉积攒 + 超维精通（T36 界域系统）
     if (window.Yogens) Yogens.tickDelayed();   // 延迟护盾等（下回合开始时结算）

@@ -122,6 +122,11 @@ const Cards = {
   /* 出牌主流程：算力检查 → 结算 effects → 进弃牌/消除 → 狂气爆发清空
    * T32 实测批（2026-10-02）：未传目标时攻击牌自动从上到下取首个存活敌人（单击即打出）；
    * choices 卡（自毁改造等）先弹选择；stances 卡（螺湮圆舞）按当前触腕姿态分支 */
+  /* 打击判定（T38 C）：卡名「打击/基础打击」，或卡面 视为「打击」——减费计数与命轮打击触发共用 */
+  isStrikeCard(card) {
+    return /^(基础)?打击$/.test((card && card.name) || "") || /视为[「"]?打击/.test((card && card.text) || "");
+  },
+
   play(uid, targetUid, choiceIdx = null) {
     const b = State.battle;
     if (!b || b.phase !== "play") { alert("当前不在出牌阶段"); return; }
@@ -146,14 +151,15 @@ const Cards = {
 
     /* 算力检查（gamekee：每回合初始5点算力；狂气爆发不消耗算力）
      * X 费（无边荒影，用户 2026-10-01 定案）：cost="X"=打出消耗所有算力（0 算力也可打出）；银钥按实耗结算
-     * 命轮减费（T8 二期，巨人之刃）：inst.disc=本回合算力消耗-1（爆发时 roll，回合末清）
-     * 长刃·陨（T32 实测批）：本回合每打出 1 张「打击」，下次打出算力 -1（discPerStrike） */
+     * 命轮减费（T8 二期，巨人之刃/往昔的花与诗）：inst.disc=本回合算力消耗-1（爆发时 roll，回合末清）
+     * 打击减费（T32 实测批，T38 C 泛化）：本回合每打出 1 张「打击」，discPerStrike 卡算力 -1——
+     * 计数全队共享（卡面无归属限定，队友打击同样减费）；视为「打击」卡（长刃·陨/人间爆破等）同计 */
     const isBurst = card.type === "狂气爆发";
     if (!isBurst) {
       const isX = card.cost === "X";
       let disc = inst.disc || 0;
       if (card.discPerStrike) {
-        const n = (b.strikesPlayed && b.strikesPlayed[owner.uid]) || 0;
+        const n = b.strikesPlayed || 0;
         if (n > disc) {
           disc = n;
           Log.add(`<span class="dim">${card.name} 减费：本回合已打出 ${n} 张「打击」→ 算力 -${n}</span>`, "sys");
@@ -197,14 +203,31 @@ const Cards = {
     }
     /* 维度穿梭（T36 界域系统）：每回合首次打出指令卡后，临时原始复制置入超维空间 */
     if (wasFirstCard && typeof RealmSys !== "undefined") RealmSys.onFirstCardPlayed(card);
-    /* 打击计数（长刃·陨 discPerStrike）：本回合每打出 1 张「打击」+1（按打出生效者计） */
-    if (/^(基础)?打击$/.test(card.name || "")) {
-      b.strikesPlayed = b.strikesPlayed || {};
-      b.strikesPlayed[owner.uid] = (b.strikesPlayed[owner.uid] || 0) + 1;
+    /* 打击计数（discPerStrike，T38 C 泛化）：isStrikeCard=卡名打击/基础打击 或 卡面视为「打击」；全队共享 */
+    if (this.isStrikeCard(card)) {
+      b.strikesPlayed = (b.strikesPlayed || 0) + 1;
     }
     if (wasFirstCard) b.firstCardPlayed = true;
     b.playedCount = (b.playedCount || 0) + 1;   // T34 条件边：「出牌>=N」计数（爆发卡走 releaseBurst 不计）
-    this._move(uid, (inst.forceExhaust || card.exhaust) ? "exhaust" : "discard");   // forceExhaust：钥令生成的「消耗」复制牌
+    inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
+    /* 变身（T38 D）：transformAfter.plays 次后变为 into（鲜血链条3次→嗜血链球）；无 plays=打出即变回 */
+    const tr = card.transformAfter;
+    if (tr && (!tr.plays || inst.playCount >= tr.plays)) {
+      inst.defId = tr.into;
+      inst.playCount = 0;
+      Log.add(`⇄ ${card.name} 变为「${this.def(inst).name}」${tr.plays ? `（已打出 ${tr.plays} 次）` : ""}`, "sys");
+    }
+    /* 回响（T38 D，MECHANICS 术语行）：打出后回到手牌。「刻印失效」用户 2026-10-03 定案=按没有刻印
+     * 实现、属性一致——模拟器未建模卡牌刻印，故无数值影响。
+     * 变身对（鲜血链条↔嗜血链球）：打出形态或变后形态任一有回响即入手牌——链条3打变身成球仍回手、
+     * 球打出变回链条随链条回响回手 */
+    const afterTr = this.def(inst);
+    if ((card.echo || afterTr.echo) && !inst.forceExhaust) {
+      this._move(uid, "hand");
+      Log.add(`↩ 回响：${afterTr.name} 回到手牌`, "sys");
+    } else {
+      this._move(uid, (inst.forceExhaust || card.exhaust) ? "exhaust" : "discard");   // forceExhaust：钥令生成的「消耗」复制牌
+    }
     /* 命轮触发（T8）：打击类（被缚抽牌/于暴雨算力中毒/灵魂诞生回血/核心熔解力量/星天兽暴击）+ 任意卡类（琥珀力量） */
     if (typeof Wheels !== "undefined") { Wheels.onStrikePlay(card, owner); Wheels.onAnyPlay(card, owner); }
     Turn.checkEnd();
@@ -258,8 +281,18 @@ const Cards = {
         case "heal": {
           let v, suffix = "";
           if (eff.pctConstitution != null) {
-            const pct = eff.pctConstitution + grow;
+            let pct = eff.pctConstitution + grow;
+            /* 启灵①纯粹理性（外域手术）：治疗量提高33%（30×1.33=39.9）；卡面用**面板体质**（无灵塑），
+             * 天赋灵知解构在 heal 取整后乘算：ceil(102×39.9%)=41 → ×1.072 → 44（2026-10-03 用户定案含天赋） */
+            if (card && card.name === "外域手术" && source.enlightenOn && source.enlightenOn[0] === true) {
+              pct = pct * 1.33;
+            }
             v = Math.ceil((source.stats?.constitution || 0) * pct / 100);
+            /* 灵知解构（卡面亦含天赋——用户 2026-10-03 定案「面板44已包含天赋加成」）：×(1+狂充×0.5%) */
+            const tkd = State.TALENT_HOOKS && State.TALENT_HOOKS[source.def.id];
+            if (tkd && tkd.healUpPerGuku && card && (card.name === "外域手术" || card.name === "等价交换") && v > 0) {
+              v = Math.ceil(v * (1 + (source.stats?.gukuRecharge || 0) * tkd.healUpPerGuku));
+            }
             suffix = `（体质${Math.round(pct * 10) / 10}%）`;
           } else {
             v = (eff.value || 0) + grow;
@@ -411,6 +444,10 @@ const Cards = {
         /* stacksAtkPct（T32 建模批）：层数/点数=攻击力×X%（如 中毒层数、反击点数），最低 1
          * stacksDefPct（T32 实测批）：点数=防御力×X%（如 自毁改造·诅咒 失力） */
         let stacks = eff.stacks || 1;
+        /* 启灵①钩子（用户 2026-10-03 锚点批）：朵尔 纯粹理性——「外域手术」虚弱回合数提高1（1→2层） */
+        if (card && card.name === "外域手术" && eff.buffId === "debuff_weak" && source.enlightenOn && source.enlightenOn[0] === true) {
+          stacks += 1;
+        }
         if (eff.stacksAtkPct) {
           const pct = eff.stacksAtkPct.base + (eff.stacksAtkPct.perLv || 0) * ((source.cardLv || 1) - 1);
           stacks = Math.max(1, Math.round((source.attack || 0) * pct / 100));
@@ -424,6 +461,11 @@ const Cards = {
         if (isStrength && per != null) {
           stacks = Math.max(1, Math.round(per));
           per = 1;
+        }
+        /* 灵塑专属（T41）：力量获取效果提高（杜勒赛因[团队]/雷娅[自身]）——正力量层数 ×(1+X%)。
+         * ⚠仅覆盖卡牌路径；钥令/命轮等其它力量来源的加成未覆盖（登记 DATA-TODO） */
+        if (eff.buffId === "buff_strength" && typeof Spirit !== "undefined") {
+          stacks = Math.max(1, Math.round(stacks * Spirit.strGainMult(source)));
         }
         for (const t of ts) Buffs.add(t, eff.buffId, stacks, eff.duration, card.name, per);
         break;
@@ -484,10 +526,25 @@ const Cards = {
       case "heal": {
         const t = eff.target === "ally" ? target : source;
         let v = (eff.value || 0) + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
-        /* pctConstitution：按施放者体质%回复（向上取整），如朵尔的体质*32% */
+        /* pctConstitution：按施放者体质%回复——实战用**实战体质**（constitutionCombat，含灵塑），
+         * 卡面（describeEffects raw）用面板体质。三段链（2026-10-03 用户三次校准定案，Wiki 基数 15）：
+         * pct=30%×1.33(启灵①)=39.9% → v=ceil(体质×39.9%) → ×(1+狂充×0.5%)(灵知解构，面板44已含天赋)
+         * 朵尔 Lv70灵格1灵塑10 persona12 cardLv6 → 卡面 ceil(41×1.072)=44、实战 ceil(54×1.072)=58 ✓ */
         if (eff.pctConstitution != null) {
-          const pct = eff.pctConstitution + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
-          v = Math.ceil((source.stats?.constitution || 0) * pct / 100);
+          let pct = eff.pctConstitution + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
+          /* 启灵①纯粹理性：外域手术 治疗量提高33%（30×1.33=39.9，小数保留由 heal ceil 收口） */
+          if (card && card.name === "外域手术" && source.enlightenOn && source.enlightenOn[0] === true) {
+            pct = pct * 1.33;
+          }
+          v = Math.ceil((source.stats?.constitutionCombat || source.stats?.constitution || 0) * pct / 100);
+        }
+        /* 天赋钩子（T38 F，已由游戏锚点证实 2026-10-03：卡面44=41×1.072 含灵知解构）：朵尔 灵知解构——
+         * 每1点狂气回充等级，「外域手术」「等价交换」回复+0.5%（乘在 heal 取整值上） */
+        const tk = State.TALENT_HOOKS && State.TALENT_HOOKS[source.def.id];
+        if (tk && tk.healUpPerGuku && card && (card.name === "外域手术" || card.name === "等价交换") && v > 0) {
+          const before = v;
+          v = Math.ceil(v * (1 + (source.stats?.gukuRecharge || 0) * tk.healUpPerGuku));
+          if (v !== before) Log.add(`✦ 天赋「灵知解构」：狂气回充 ${source.stats?.gukuRecharge || 0} → 回复 ${before}→${v}`, "good");
         }
         if (t && v > 0) Damage.heal(t, v, card.name);
         break;
