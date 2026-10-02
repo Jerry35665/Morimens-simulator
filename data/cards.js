@@ -108,11 +108,17 @@ window.DBF.cards = [
   {
     id: "card_ogilvy_spear",
     name: "穿刺之枪", owner: "char_ogilvy", cost: 2, type: "攻击", target: "enemy", exhaust: false,
-    text: "造成8点穿刺伤害并施加1回合易伤。（伤害 攻击力*25%）",
+    text: "造成[攻击力*25%]点穿刺伤害并施加1回合易伤。享受3倍力量加成。",
     effects: [ { op: "damage", scaleAttack: 0.25, scalePerLv: 0.05 }, { op: "buff", buffId: "debuff_vul", stacks: 1, duration: 1, target: "enemy" } ],
     upgrade: null, terms: ["term_vul"], generated: false,
     source: "gamekee 奥吉尔角色页", notes: "启灵：易伤回合数+1；对护盾目标双倍伤害（未自动结算）；T37 追加批：攻×(25+5/级)%灰机逐级重建（原平值8）；易伤=仅被打到的目标（用户 2026-10-02 定案，单体施加不扩散）；穿刺伤害/3倍力量加成/启灵双倍伤害 未建模"
   },
+  {
+    id: "card_ogilvy_barrier",
+    name: "不定壁垒", owner: "char_ogilvy", cost: "X", type: "技能", target: "self", exhaust: false,
+    text: "获得[防御力*7%]点护盾 X+1 次，每消耗 1 点算力，获得 5 点狂气。",
+    effects: [ { op: "block", scaleDefense: 0.07, scalePerLv: 0.014, timesXSpend: true }, { op: "guku", perSpend: 5 } ],
+    upgrade: null, terms: [], generated: false, source: "灰机wiki 逐级（T32 追加批 2026-10-02 建卡）", notes: "T37 追加批：X 费实耗全算力；护盾次数=实耗+1（timesXSpend）、狂气=5×实耗（perSpend）已实装；启灵3 力量攻4→8%/护盾12→20% 未建模" },
   {
     id: "card_ogilvy_awaken",
     name: "七艺，传承美德", owner: "char_ogilvy", cost: 0, type: "狂气爆发", target: "self", exhaust: false,

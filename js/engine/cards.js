@@ -162,6 +162,7 @@ const Cards = {
       const spend = isX ? b.energy : Math.max(0, card.cost - disc);
       if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(减费)` : ""}）`); return; }
       b.energy -= spend;
+      b.xSpend = isX ? spend : 0;   // X 费实耗（不定壁垒 timesXSpend/perSpend 等引用，T32 追加批）
       delete inst.disc;   // 减费随打出消耗
       /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减（取整，用户 2026-10-02） */
       const skLevel = (owner.stats && owner.stats.silverKeyCharge) || 15;
@@ -250,6 +251,7 @@ const Cards = {
           }
           let t = `获得${v}点护盾`;
           if (eff.times > 1) t += `×${eff.times}次`;
+          if (eff.timesXSpend) t += `×(当前算力+1)次`;
           out.push(t);
           break;
         }
@@ -267,6 +269,11 @@ const Cards = {
         }
         case "guku": {
           const bonus = (card.type === "攻击" || card.type === "防御") ? lv - 1 : 0;
+          if (eff.perSpend != null) {
+            const charge = State.battle ? (State.battle.xSpend || 0) : 0;
+            out.push(`获得${eff.perSpend * charge}点狂气（${eff.perSpend}/算力×${charge}）`);
+            break;
+          }
           out.push(`获得${eff.value + grow + bonus}点狂气`);
           break;
         }
@@ -359,7 +366,9 @@ const Cards = {
       }
       case "block": {
         /* 护盾获得量受脆弱（shieldPct）影响
-         * scalePerLv：护盾%随技能等级成长（如 未损的骑士心 防×(28+7×技能等级)%、基础防御 10%+2%/级） */
+         * scalePerLv：护盾%随技能等级成长（如 未损的骑士心 防×(28+7×技能等级)%、基础防御 10%+2%/级）
+         * timesXSpend（T32 追加批：不定壁垒）：生效次数 = X 费实耗算力 + 1（play() 已把实耗记入 b.xSpend） */
+        const times = eff.timesXSpend ? (State.battle.xSpend || 0) + 1 : (eff.times || 1);
         let v = eff.value != null ? eff.value + (eff.perLv || 0) * ((source.cardLv || 1) - 1)
           : Math.ceil(Math.round((source.defense || 0) * ((eff.scaleDefense || 0) + (eff.scalePerLv || 0) * ((source.cardLv || 1) - 1)) * 1e6) / 1e6);
         const frag = Buffs.collect(source, "shieldPct");
@@ -369,9 +378,12 @@ const Cards = {
           Log.add(`<span class="dim">护盾受 ${frag.map(m => m.name).join("、")} 影响 ×${agg.factor.toFixed(3)}${agg.hasUnknown ? " ⚠叠法未确认" : ""}</span>`);
         }
         /* 命轮「护盾提高X%」统一入口（T8 三期，blockPct 在 addShield 内乘算） */
-        const gained = (typeof Damage !== "undefined") ? Damage.addShield(source, v) : (source.shield += v, v);
-        Log.add(`${source.def.name} 获得护盾 +${gained}（当前 ${source.shield}，回合结束移除）`, "good");
-        if (window.UIBoard) UIBoard.float(source.uid, `+${gained}🛡`, "shield");
+        let gainedTotal = 0;
+        for (let k = 0; k < times; k++) {
+          gainedTotal += (typeof Damage !== "undefined") ? Damage.addShield(source, v) : (source.shield += v, v);
+        }
+        Log.add(`${source.def.name} 获得护盾 +${gainedTotal}${times > 1 ? `（${v}/次 ×${times}）` : ""}（当前 ${source.shield}，回合结束移除）`, "good");
+        if (window.UIBoard) UIBoard.float(source.uid, `+${gainedTotal}🛡`, "shield");
         break;
       }
       case "buff": {
@@ -425,10 +437,12 @@ const Cards = {
         break;
       }
       case "guku": {
-        /* 打击/防御类卡：卡牌等级每升一级额外+1狂气；perLv=每级成长值 */
+        /* 打击/防御类卡：卡牌等级每升一级额外+1狂气；perLv=每级成长值
+         * perSpend（T32 追加批：不定壁垒）：狂气 = perSpend × X 费实耗算力（b.xSpend） */
         const lvBonus = (card && /^(基础)?(打击|防御)$/.test(card.name || "")) ? (source.cardLv || 1) - 1 : 0;
         const lvGrow = (eff.perLv || 0) * (source.cardLv || 1) - (eff.perLv || 0);
-        source.guku = Math.min(source.gukuMax || 100, source.guku + eff.value + lvBonus + lvGrow);
+        const gv = eff.perSpend != null ? eff.perSpend * (State.battle.xSpend || 0) : eff.value;
+        source.guku = Math.min(source.gukuMax || 100, source.guku + gv + lvBonus + lvGrow);
         break;
       }
       case "gukuAllies":

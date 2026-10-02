@@ -231,7 +231,7 @@ function runAllTests() {
   { /* T15/T20 SSR 口径牌组：御四家 wiki 映射（萝坦4/朵尔3[等价交换缺卡]/奥吉尔3[不定壁垒缺卡]/拉蒙娜4）= 14 张 */
     const p = State.battle.piles;
     const total = p.draw.length + p.hand.length + p.discard.length + p.exhaust.length;
-    check("T15 SSR口径牌堆=14张(wiki映射 4+3+3+4)", total === 14, "实际:" + total);
+    check("T15 SSR口径牌堆=15张(wiki映射 4+4+3+4，奥吉尔不定壁垒 10-02 建卡)", total === 15, "实际:" + total);
     check("T15 爆发/觉醒不进默认牌堆", !p.draw.concat(p.hand, p.discard, p.exhaust)
       .some(c => ["狂气爆发", "灵知觉醒"].includes((Cards.def(c) || {}).type)));
   }

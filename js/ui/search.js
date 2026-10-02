@@ -85,11 +85,12 @@ const UISearch = {
       lib.forEach((it, i) => {
         if (!this._match(it.name, it.diff)) return;
         out.push(`<div class="search-item">
+          <span class="add-btn" style="background:#6b3a3a;color:#e8c8c8" onclick="Collector.delLevelFromLib(${i})" title="从关卡库删除（不影响已导入的地图与战斗记录）">删除</span>
           <span class="add-btn" style="margin-right:4px" onclick="Collector.loadLevelFromLib(${i})">载入图</span>
           <span class="add-btn" onclick="Collector.addLevelToBattle(${i})">＋战斗</span>
           <div class="si-name">🗺 ${it.name}</div>
           <div class="si-meta">${it.diff || "难度混合"} · ${it.cells ?? "?"} 格 · ${it.battleCount || 0} 场战斗</div>
-          <div class="si-meta dim">${it.savedAt || ""} · ＋战斗=直接开打 · 载入图=并入地图走格子 · <span class="si-tag" style="cursor:pointer" onclick="Collector.delLevelFromLib(${i})">删除</span></div>
+          <div class="si-meta dim">${it.savedAt || ""} · ＋战斗=直接开打 · 载入图=并入地图走格子 · 删除=移出关卡库</div>
         </div>`);
       });
     }
