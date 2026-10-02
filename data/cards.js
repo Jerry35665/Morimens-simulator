@@ -60,7 +60,7 @@ window.DBF.cards = [
     text: "回复[体质*15%]点（每级+3%；启灵1: 体质*20%起）。对所有敌人造成1层虚弱（启灵1: 2层）。",
     effects: [
       { op: "heal", value: 0, pctConstitution: 15, perLv: 3, target: "self" },
-      { op: "buff", buffId: "debuff_weak", stacks: 1, target: "enemy" }
+      { op: "buff", buffId: "debuff_weak", stacks: 1, target: "all_enemies" }
     ],
     upgrade: null, terms: ["term_weak"], generated: false,
     source: "游戏内截图(Kuyo群 2026-09)",
@@ -99,34 +99,27 @@ window.DBF.cards = [
   },
   {
     id: "card_ogilvy_zeal",
-    name: "骑士热诚", owner: "char_ogilvy", cost: 2, type: "权柄", target: "self", exhaust: false,
+    name: "骑士热诚", owner: "char_ogilvy", cost: 2, type: "灵知觉醒", target: "self", exhaust: false, retain: true,
     text: "力量 攻击力*3.75%。奥吉尔获得25点狂气。灵知觉醒：获得2点力量，奥吉尔打出卡牌后获得1点力量。",
-    effects: [ { op: "buff", buffId: "buff_strength", stacks: 1, per: 1, target: "self" }, { op: "guku", value: 25 } ],
+    effects: [ { op: "guku", value: 25, perLv: 5 } ],
     upgrade: null, terms: ["term_strength"], generated: false,
-    source: "gamekee 奥吉尔角色页", notes: "攻31×3.75%≈1.16，框架取1点力量"
+    source: "gamekee 奥吉尔角色页", notes: "攻31×3.75%≈1.16，框架取1点力量；T37 追加批：槽位纠正（游戏为灵知觉醒卡，原误标权柄）；狂气 25+5/级；灵知觉醒触发段（力量攻3.75%/1.5%）未建模"
   },
   {
     id: "card_ogilvy_spear",
     name: "穿刺之枪", owner: "char_ogilvy", cost: 2, type: "攻击", target: "enemy", exhaust: false,
     text: "造成8点穿刺伤害并施加1回合易伤。（伤害 攻击力*25%）",
-    effects: [
-      { op: "damage", value: 8 },
-      { op: "buff", buffId: "debuff_vul", stacks: 1, duration: 1, target: "enemy" }
-    ],
+    effects: [ { op: "damage", scaleAttack: 0.25, scalePerLv: 0.05 }, { op: "buff", buffId: "debuff_vul", stacks: 1, duration: 1, target: "enemy" } ],
     upgrade: null, terms: ["term_vul"], generated: false,
-    source: "gamekee 奥吉尔角色页", notes: "启灵：易伤回合数+1；对护盾目标双倍伤害（未自动结算）"
+    source: "gamekee 奥吉尔角色页", notes: "启灵：易伤回合数+1；对护盾目标双倍伤害（未自动结算）；T37 追加批：攻×(25+5/级)%灰机逐级重建（原平值8）；易伤=仅被打到的目标（用户 2026-10-02 定案，单体施加不扩散）；穿刺伤害/3倍力量加成/启灵双倍伤害 未建模"
   },
   {
     id: "card_ogilvy_awaken",
     name: "七艺，传承美德", owner: "char_ogilvy", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
     text: "狂气爆发：驱散自身脆弱状态。获得12点护盾。在本回合中获得5点力量。",
-    effects: [
-      { op: "dispel", kind: "debuff", target: "self" },
-      { op: "block", value: 12 },
-      { op: "buff", buffId: "buff_strength", stacks: 5, duration: 1, target: "self" }
-    ],
+    effects: [ { op: "dispel", kind: "debuff", target: "self" }, { op: "block", scaleDefense: 0.3, scalePerLv: 0.06 }, { op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 15, perLv: 3 }, stacks: 1, duration: 1, target: "self" } ],
     upgrade: null, terms: [], generated: false,
-    source: "gamekee 奥吉尔角色页", notes: ""
+    source: "gamekee 奥吉尔角色页", notes: "T37 追加批：护盾防×(30+6/级)%+力量攻×(15+3/级)%层（本回合）灰机重建（原平值12盾/5点力量）；驱散简化为全减益；启灵2 附加盾 未建模"
   },
 
   /* ================= 萝坦（混沌·伤害） ================= */
@@ -156,33 +149,27 @@ window.DBF.cards = [
   },
   {
     id: "card_rotan_blade",
-    name: "桀骜之刃", owner: "char_rotan", cost: 3, type: "攻击", target: "enemy", exhaust: false,
+    name: "桀骜之刃", owner: "char_rotan", cost: 3, type: "攻击", target: "enemy", exhaust: false, discPerStrike: true,
     text: "对随机1名敌人造成4点伤害，重复3次。在本回合中每打出1张「打击」算力消耗减少1点。",
-    effects: [ { op: "damage", value: 4, times: 3 } ],
+    effects: [ { op: "damage", scaleAttack: 0.075, scalePerLv: 0.015, times: 3 } ],
     upgrade: null, terms: [], generated: false,
-    source: "gamekee 萝坦角色页", notes: "游戏内为随机目标+变费，框架简化为指定目标固定3次、固定费用"
+    source: "gamekee 萝坦角色页", notes: "游戏内为随机目标+变费，框架简化为指定目标固定3次、固定费用；T37 追加批：攻×(7.5+1.5/级)%×3次灰机重建（原平值4×3）；✅每打出1张打击算力-1（discPerStrike）；随机目标简化为首敌；启灵1视为打击 未建模"
   },
   {
     id: "card_rotan_wave",
     name: "恣睢之浪", owner: "char_rotan", cost: 2, type: "攻击", target: "none", exhaust: false,
     text: "对所有敌人造成3点伤害，获得1点力量。",
-    effects: [
-      { op: "damage", value: 3, allEnemies: true },
-      { op: "buff", buffId: "buff_strength", stacks: 1, per: 1, target: "self" }
-    ],
+    effects: [ { op: "damage", scaleAttack: 0.075, scalePerLv: 0.015, allEnemies: true }, { op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 2.5, perLv: 0.5 }, stacks: 1, target: "self" } ],
     upgrade: null, terms: ["term_strength"], generated: false,
-    source: "gamekee 萝坦角色页", notes: "AoE"
+    source: "gamekee 萝坦角色页", notes: "AoE；T37 追加批：全体攻×(7.5+1.5/级)%+力量攻×(2.5+0.5/级)%层数化灰机重建（原平值3/1点力量）"
   },
   {
     id: "card_rotan_awaken",
     name: "混沌之兽", owner: "char_rotan", cost: 0, type: "狂气爆发", target: "none", exhaust: false,
     text: "狂气爆发：驱散自身虚弱状态。对所有敌人造成14点伤害。在本场战斗中每打出1张「打击」便使伤害+3。",
-    effects: [
-      { op: "dispel", kind: "debuff", target: "self" },
-      { op: "damage", value: 14, allEnemies: true }
-    ],
+    effects: [ { op: "dispel", kind: "debuff", target: "self" }, { op: "damage", scaleAttack: 0.4, scalePerLv: 0.08, allEnemies: true } ],
     upgrade: null, terms: [], generated: false,
-    source: "gamekee 萝坦角色页", notes: "打击计数成长未自动结算，可手动调基础值"
+    source: "gamekee 萝坦角色页", notes: "打击计数成长未自动结算，可手动调基础值；T37 追加批：全体攻×(40+8/级)%灰机重建（原平值14）；每打出1张打击伤害+攻×8% 未建模"
   },
 
   /* ================= 拉蒙娜（混沌·辅助） ================= */
@@ -214,20 +201,17 @@ window.DBF.cards = [
     id: "card_ramona_queenblade",
     name: "女王之剑", owner: "char_ramona", cost: 3, type: "攻击", target: "enemy", exhaust: false,
     text: "造成7点伤害2次，打出后伤害次数+1，最多5次。",
-    effects: [ { op: "damage", value: 7, times: 2 } ],
+    effects: [ { op: "damage", scaleAttack: 0.15, scalePerLv: 0.03, times: 3 } ],
     upgrade: null, terms: [], generated: false,
-    source: "gamekee 拉蒙娜角色页", notes: "次数成长未自动结算，可在沙盒中改 times"
+    source: "gamekee 拉蒙娜角色页", notes: "次数成长未自动结算，可在沙盒中改 times；T37 追加批：攻×(15+3/级)%×3次灰机重建（原平值7×2）；打出后次数+1（max5）未建模"
   },
   {
     id: "card_ramona_tactics",
     name: "攻势推演", owner: "char_ramona", cost: 2, type: "权柄", target: "none", exhaust: false,
     text: "使所有敌人力量临时降低4点，抽1张牌。",
-    effects: [
-      { op: "buff", buffId: "debuff_strength_down", stacks: 4, target: "all_enemies" },
-      { op: "draw", value: 1 }
-    ],
+    effects: [ { op: "buff", buffId: "debuff_strength_down", stacksDefPct: { base: 7.5, perLv: 1.5 }, stacks: 1, duration: 1, target: "all_enemies" }, { op: "draw", value: 1 } ],
     upgrade: null, terms: ["term_strength"], generated: false,
-    source: "gamekee 拉蒙娜角色页", notes: ""
+    source: "gamekee 拉蒙娜角色页", notes: "T37 追加批：全体失力 防×(7.5+1.5/级)%点（点数=层数×1点）灰机重建（原平值4）；临时按1回合估；启灵2银钥 未建模"
   },
   {
     id: "card_ramona_awaken",
