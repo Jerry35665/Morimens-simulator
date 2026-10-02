@@ -1922,45 +1922,26 @@ const Collector = {
       attack: def.attack.normal, defense: 0, shield: 0, guku: 0, gukuMax: 100, tentacles: 0, buffs: [] };
   },
 
-  /* 关卡直接加入战斗（T35 补，用户 10-02：加关卡或加怪物都能开始战斗）：
-   * 把关卡在当前难度的战斗构建进敌方面板（prep 阶段），「开始战斗」即打，无需走地图 */
-  addLevelToBattle(i) {
+  /* 关卡开打（T35 补，用户 10-03 定稿：不直接进战斗）——
+   * 载入关卡（地图并入+同号记录替换）→ 切使用模式落到出生点 → 走到战斗格 enterMapFight 开打 */
+  playLevel(i) {
     const it = this.levelLib()[i];
     if (!it || !it.level) { this.setStatus("关卡库中没有这一项"); return; }
-    if (typeof State === "undefined") return;
-    if (!State.battle) State.newBattle();
-    if (!["prep", "over"].includes(State.battle.phase)) { this.setStatus("战斗进行中——先结束本场再加入关卡"); return; }
-    /* 上一场已结束：软重开保留队伍（同 enterMapFight 口径） */
-    if (State.battle.phase === "over") {
-      const team = State.battle.allies.map(a => ({ id: a.def.id, level: a.level }));
-      State.newBattle();
-      for (const m of team) { try { State.addAlly(m.id, m.level); } catch (e) {} }
+    if (!this._applyLevel(it.level)) return;
+    this.mapMode = "use";
+    if (this.isOpen()) {
+      this.setMapMode("use");   /* 面板开着=完整「新一把」：清进度/难度=选择器/落出生点 */
+    } else {
+      /* 面板没开：手动完成落点与难度同步（新一把语义），存档待面板打开 */
+      this.mapPos = this.findSpawnKey();
+      if (typeof State !== "undefined" && State.battle && !["play", "enemy"].includes(State.battle.phase)) {
+        const sel = document.getElementById("difficulty-select");
+        if (sel && sel.value) State.battle.difficulty = sel.value;
+      }
+      this.saveMap();
     }
-    /* 难度=顶栏选择器（与「新一把难度=选择器」同口径），缺该难度档回落关卡第一条 */
-    const sel = document.getElementById("difficulty-select");
-    if (sel && sel.value) State.battle.difficulty = sel.value;
-    const cur = this.normalizeDiff(State.battle.difficulty);
-    const battles = Array.isArray(it.level.battles) ? it.level.battles.filter(x => x && x.fields && Array.isArray(x.fields.batch)) : [];
-    const rec = battles.find(x => this.normalizeDiff(x.fields.diff) === cur) || battles[0];
-    if (!rec) { this.setStatus("关卡里没有可加入的战斗记录"); return; }
-    State.battle.enemies = [];
-    State.battle.aiIndex = {};
-    for (const en of rec.fields.batch) {
-      const u = this._buildEnemyUnit(en);
-      State.battle.enemies.push(u);
-      State.battle.aiIndex[u.uid] = 0;
-    }
-    const dN = this.normalizeDiff(rec.fields.diff);
-    const diffMap = { n1: "normal", n2: "hard", n3: "nightmare", n4: "insane", n5: "n5", n6: "n6", n7: "n7" };
-    State.battle.difficulty = diffMap[dN] || State.battle.difficulty;
-    /* 选择器/等级显示同步到本场难度（不锁定——自由战斗） */
-    if (sel && [...sel.options].some(o => o.value === State.battle.difficulty)) sel.value = State.battle.difficulty;
-    if (State.autoLevel) {
-      const lv = document.getElementById("level-input");
-      if (lv) { lv.value = State.autoLevel(1, State.battle.difficulty); State.battle.level = parseInt(lv.value, 10) || State.battle.level; }
-    }
-    this.setStatus(`已加入关卡战斗「${it.name}」（${dN}，${rec.fields.batch.length} 只）——点「开始战斗」开打`);
-    State.notify();
+    this.setStatus(`关卡「${it.name}」已就位（${it.diff || "多难度"}）——已在出生点，走进战斗格即开打`);
+    if (typeof UISearch !== "undefined") UISearch.render();
   },
 
   monitorMapFight(cell) {

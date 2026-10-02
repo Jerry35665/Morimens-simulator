@@ -48,7 +48,7 @@ window.DBF.enemies = [
     id: "enemy_dummy",
     name: "木桩（沙盒用）",
     tier: "normal",
-    hp: { normal: 1000, hard: 1000 },
+    hp: { normal: 10000000, hard: 10000000 },
     attack: { normal: 0, hard: 0 },
     actions: [],
     passives: ["不行动，用于测量伤害数值"],
