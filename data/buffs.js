@@ -21,6 +21,15 @@
 
 window.DBF.buffs = [
 
+  { id: "buff_guard", name: "戒备", kind: "buff", stack: "add", maxStacks: null, defaultDuration: null,
+    shared: true,   // T32 实测批（2026-10-02 用户口径）：全队共享
+    effect: {},
+    desc: "戒备：全队共享状态（数值机制未建模，用户 2026-10-02 口述确认共享属性）",
+    icon: "🛡", onEnd: null, confirmed: false,
+    source: "用户口述 2026-10-02",
+    notes: "占位 def：仅挂载与共享传播，效果数值待游戏内实测后回填" },
+
+
   /* ---------- 增益 ---------- */
   {
     id: "buff_damage_immune",
@@ -39,6 +48,7 @@ window.DBF.buffs = [
   },
   {
     id: "buff_strength",
+    shared: true,   // T32 实测批（2026-10-02 用户口径）
     name: "力量",
     kind: "buff",
     stack: "add",
@@ -71,6 +81,7 @@ window.DBF.buffs = [
   /* ---------- 减益 ---------- */
   {
     id: "debuff_vul",
+    shared: true, roundLayers: true,   // T32 实测批（2026-10-02 用户口径）
     name: "易伤",
     kind: "debuff",
     stack: "duration",
@@ -86,6 +97,7 @@ window.DBF.buffs = [
   },
   {
     id: "debuff_weak",
+    shared: true, roundLayers: true,   // T32 实测批（2026-10-02 用户口径）
     name: "虚弱",
     kind: "debuff",
     stack: "duration",
@@ -101,6 +113,7 @@ window.DBF.buffs = [
   },
   {
     id: "debuff_fragile",
+    shared: true, roundLayers: true,   // T32 实测批（2026-10-02 用户口径）
     name: "脆弱",
     kind: "debuff",
     stack: "duration",
@@ -131,6 +144,7 @@ window.DBF.buffs = [
   },
   {
     id: "debuff_strength_down",
+    shared: true,   // T32 实测批（2026-10-02 用户口径）
     name: "力量降低",
     kind: "debuff",
     stack: "add",
@@ -150,7 +164,8 @@ window.DBF.buffs = [
     effect: { riposteFlat: 1 }, confirmed: true,
     desc: "承受主动伤害时，对伤害来源造成等量层数的纯粹伤害（游戏内词条 2026-09-23）",
     icon: "🗡", onEnd: null, source: "游戏内词条（用户采集）", notes: "纯粹伤害=无法暴击、不视为唤醒体造成；引擎结算未实现" },
-  { id: "debuff_crush", name: "重创", kind: "debuff", stack: "add", maxStacks: null, defaultDuration: 2,
+  { id: "debuff_crush",
+    shared: true, roundLayers: true,   // T32 实测批（2026-10-02 用户口径） name: "重创", kind: "debuff", stack: "add", maxStacks: null, defaultDuration: 2,
     effect: { healPct: -0.25 }, confirmed: true,
     desc: "受到的生命回复降低25%，回合结束时移除1层（游戏内词条 2026-09-23）",
     icon: "🩹", onEnd: null, source: "游戏内词条（用户采集）", notes: "治疗降低类；healPct 引擎未实现" },

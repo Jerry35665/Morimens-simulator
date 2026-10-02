@@ -18,10 +18,21 @@ const UIGear = {
     if (!u) return;
     const def = u.def;
 
-    let html = `<div class="m-row dim">属性由 等级基础 + 命轮/密契套装/灵塑适性/内在灵格 自动计算：</div>
-      <table class="mech-table"><tr><th>体质</th><th>攻击</th><th>防御</th><th>会心率</th><th>会心伤害</th><th>界域精通</th><th>伤害强效</th><th>黑印</th><th>死亡抵抗</th><th>狂气回充</th><th>银钥充能</th></tr>
-      <tr>${["constitution", "attack", "defense", "critRate", "critDmg", "realmMastery", "damageBoost", "blackImprint", "deathResist", "gukuRecharge", "silverKeyCharge"]
-        .map(k => `<td>${u.stats[k]}</td>`).join("")}</tr></table>`;
+    /* 主行=实战口径（含 命轮/密契/灵塑）；第二行=裸装对照（剥离 命轮/密契/灵塑，保留 等级+灵格+人格深化+星级）。
+     * 灵塑实战生效、游戏「属性详情」面板不显示（用户 2026-10-02 澄清）——对账游戏面板看第二行（朵尔 15:08 截图锚点 102/83/111/14.4/36.6） */
+    const naked = (() => {
+      const bare = { def: u.def, level: u.level, innerGridLv: u.innerGridLv || 0, personaLv: u.personaLv || 0,
+        fatewheels: [], fwStacks: [0, 0], pacts: [], pactDetails: [null, null, null, null, null, null],
+        pactSetBound: {}, spiritAdaptLv: 0 };
+      return State.computeStats(u.def, u.level + (u.innerGridLv || 0) * 2, State.collectStatMods(bare));
+    })();
+    const COMBAT_KEYS = ["constitutionCombat", "attack", "defense", "critRate", "critDmg", "realmMastery", "damageBoost", "blackImprint", "deathResist", "gukuRecharge", "silverKeyCharge"];
+    const NAKED_KEYS = ["constitution", "attack", "defense", "critRate", "critDmg", "realmMastery", "damageBoost", "blackImprint", "deathResist", "gukuRecharge", "silverKeyCharge"];
+    let html = `<div class="m-row dim">属性由 等级基础 + 命轮/密契套装/灵塑适性/内在灵格 自动计算（第一行=实战口径，含灵塑）：</div>
+      <table class="mech-table"><tr><th>体质</th><th>攻击</th><th>防御</th><th>暴击率</th><th>暴击伤害</th><th>界域精通</th><th>伤害强效</th><th>黑印</th><th>死亡抵抗</th><th>狂气回充</th><th>银钥充能</th></tr>
+      <tr>${COMBAT_KEYS.map(k => `<td>${u.stats[k] != null ? u.stats[k] : u.stats.constitution}</td>`).join("")}</tr>
+      <tr style="color:var(--text-dim)">${NAKED_KEYS.map(k => `<td>${naked[k]}</td>`).join("")}</tr></table>
+      <div class="m-row dim">第二行=裸装对照（≈游戏「属性详情」面板：不含 命轮/密契/灵塑；灵塑实战生效、游戏面板不显示，故第一行体质/攻/防比它高）</div>`;
 
     /* 等级 */
     const cap = State.levelCap(u);
@@ -61,7 +72,7 @@ const UIGear = {
     if (def.talent) html += `<div class="m-row" style="font-size:12px"><span class="dim">◈</span> <span class="dim">${def.talent}</span></div>`;
 
     /* 灵塑适性 / 内在灵格 / 疯狂预兆（等级制） */
-    html += `<div class="m-row"><b>灵塑适性</b>（星辰天赋 0~${DBF.spiritAdaptMaxLv}，每级+3%三维，高等级附特殊效果待录入）：
+    html += `<div class="m-row"><b>灵塑适性</b>（星辰天赋 0~${DBF.spiritAdaptMaxLv}，每级+3%三维——实战生效，游戏属性面板不显示此项）：
       <button class="mini-btn" onclick="UIGear.setLv('${uid}','spiritAdaptLv',-1)">-</button>
       <b>Lv${u.spiritAdaptLv || 0}</b>
       <button class="mini-btn" onclick="UIGear.setLv('${uid}','spiritAdaptLv',1)">+</button></div>`;

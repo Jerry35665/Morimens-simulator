@@ -76,6 +76,22 @@ const UISearch = {
           ${e.actions ? `<div class="si-meta dim">行动：${e.actions.map(a => a.name).join("→")}</div>` : ""}
         </div>`);
       }
+    } else if (this.tab === "levels") {
+      /* 关卡库（Collector.saveLevelToLib 入库）：点「载入」直接应用地图+战斗，无需复制粘贴 */
+      const lib = (typeof Collector !== "undefined" && Collector.levelLib) ? Collector.levelLib() : [];
+      if (!lib.length) {
+        out.push(`<div class="search-item"><div class="si-meta">关卡库为空——地图面板「📦存关卡」保存后出现在这里（粘贴导入的关卡也会自动入库）</div></div>`);
+      }
+      lib.forEach((it, i) => {
+        if (!this._match(it.name, it.diff)) return;
+        out.push(`<div class="search-item">
+          <span class="add-btn" style="margin-right:4px" onclick="Collector.loadLevelFromLib(${i})">载入图</span>
+          <span class="add-btn" onclick="Collector.addLevelToBattle(${i})">＋战斗</span>
+          <div class="si-name">🗺 ${it.name}</div>
+          <div class="si-meta">${it.diff || "难度混合"} · ${it.cells ?? "?"} 格 · ${it.battleCount || 0} 场战斗</div>
+          <div class="si-meta dim">${it.savedAt || ""} · ＋战斗=直接开打 · 载入图=并入地图走格子 · <span class="si-tag" style="cursor:pointer" onclick="Collector.delLevelFromLib(${i})">删除</span></div>
+        </div>`);
+      });
     }
     return out;
   }

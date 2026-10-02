@@ -105,10 +105,10 @@ window.addEventListener("DOMContentLoaded", () => {
     State.whale = !State.whale;
     State.persist();
     whaleBtn.classList.toggle("primary", State.whale);
-    Log.add(`🐋 氪佬模式 ${State.whale ? "开启——新增唤醒体自动理论最高配置" : "关闭"}`, "sys");
+    Log.add(`🐋 氪佬模式 ${State.whale ? "开启——新增唤醒体养成全满（命轮/密契不自动装）" : "关闭"}`, "sys");
     if (State.whale && State.battle) {
       for (const a of State.battle.allies) { State.maxOut(a); State.refreshAlly(a); }
-      Log.add("🐋 现有唤醒体已全部拉满", "sys");
+      Log.add("🐋 现有唤醒体养成项已拉满（已装备的命轮/密契保持不动）", "sys");
     }
   };
   document.getElementById("btn-rollback").onclick = () => {

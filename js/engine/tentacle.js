@@ -69,14 +69,48 @@ const Tentacle = {
       const baseHp = b.team.baseMaxHp || b.team.maxHp;
       if (chaosN > 0 && baseHp > 0) symbiosis = baseHp * 0.01 * chaosN;
     }
-    /* 「触腕伤害加一半的力量」（E6 机制发现B：32力量→+16触伤）：当前力量合计×0.5 */
+    /* 「触腕伤害加一半的力量」（E6 机制发现B：32力量→+16触伤）：当前力量合计×0.5
+     * T32 实测批：力量为全队共享 buff——共享实例只计一次（否则按队员数重复累加） */
     let power = 0;
+    const seenShared = new Set();
     for (const a of b.allies) {
       if (!a.buffs) continue;
-      power += Buffs.collect(a, "damageFlat").reduce((s, m) => s + m.total, 0);
+      for (const inst of a.buffs) {
+        const def = State.getBuff(inst.defId);
+        if (!def || def.effect.damageFlat == null) continue;
+        if (def.shared) {
+          if (seenShared.has(inst.defId)) continue;
+          seenShared.add(inst.defId);
+        }
+        const per = inst.per != null ? inst.per : def.effect.damageFlat;
+        power += per * inst.stacks;
+      }
     }
+    /* 临时触腕伤害（T32 实测批：螺湮圆舞潮涌等「触腕伤害+[攻×X%]」）——加算点数，⚠加算位置未经实测，估算入基础段 */
+    const tempDmg = this._tempDmgSum();
     const main = pool * 0.095 * (1 + boost / 100);
+    if (tempDmg > 0) return Math.ceil(main + symbiosis + power * 0.5 + tempDmg);
     return Math.ceil(main + symbiosis + power * 0.5);
+  },
+
+  /* 临时触腕伤害（T32 实测批）：「触腕伤害 +[攻击力*X%]」= 单次触伤加算 攻×X% 点（⚠加算位置未经实测，暂入基础段） */
+  addTempDmg(ally, pct) {
+    const b = State.battle;
+    if (!b || !b.tentacle) return;
+    b.tempTentacleDmg = b.tempTentacleDmg || [];
+    b.tempTentacleDmg.push({ uid: ally.uid, pct });
+    Log.add(`🐙 ${ally.def.name} 触腕伤害 +攻击力×${pct}%（临时，本回合）`, "sys");
+  },
+
+  _tempDmgSum() {
+    const b = State.battle;
+    if (!b || !b.tempTentacleDmg || !b.tempTentacleDmg.length) return 0;
+    let sum = 0;
+    for (const t of b.tempTentacleDmg) {
+      const a = b.allies.find(x => x.uid === t.uid);
+      if (a) sum += (a.attack || 0) * t.pct;
+    }
+    return sum;
   },
 
   /* ---------- 单条触腕攻击：基础值 → ④虚弱 → ⑤易伤 → ⑥触腕暴击 → 落账 ---------- */
@@ -164,6 +198,7 @@ const Tentacle = {
     if (!b || !b.tentacle) return;
     b.tentacle.stance = "潮涌";
     b.tentacle.swapped = false;
+    b.tempTentacleDmg = [];   // 临时触腕伤害（螺湮圆舞潮涌等）每回合清空（T32 实测批）
   },
 
   /* ---------- 爆发钩子（触腕集结）---------- */
@@ -192,6 +227,7 @@ const Tentacle = {
 
   /* ---------- 姿态切换（UI：每回合 1 次）---------- */
   STANCES: { "潮涌": "静海", "静海": "怒涛", "怒涛": "潮涌" },
+  MULT: { "潮涌": 1.0, "静海": 0.5, "怒涛": 1.25 },   // 姿态倍率（chip 显示/结算共用）
   cycleStance() {
     const b = State.battle;
     if (!b || !b.tentacle) { alert("当前队伍没有触腕（需要深海界域成员并开始战斗）"); return; }

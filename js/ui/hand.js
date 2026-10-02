@@ -56,25 +56,22 @@ const UIHand = {
     return el;
   },
 
-  /* 点击手牌：无目标卡直接打出；需目标卡进入选择模式 */
+  /* 点击手牌：单击即打出（T32 实测批 2026-10-02 用户口径）——
+   * 攻击牌自动从上到下取首个存活敌人，我方牌默认打出生效者；不再进入选目标模式 */
   clickCard(uid) {
     const inst = State.battle.piles.hand.find(c => c.uid === uid);
     if (!inst || State.battle.phase !== "play") { if (State.battle.phase !== "play") Log.add("当前不是出牌阶段", "sys"); return; }
-    const card = Cards.def(inst);
-    if (card.target === "enemy" || card.target === "ally") {
-      if (TargetMode.active && TargetMode.cardUid === uid) {
-        TargetMode.active = false;
-      } else {
-        TargetMode.active = true;
-        TargetMode.cardUid = uid;
-        Log.add(`请点击${card.target === "enemy" ? "敌方" : "我方"}单位打出 <b>${card.name}</b>（再点卡牌取消）`, "sys");
-      }
-      State.notify();
-    } else {
-      TargetMode.active = false;
-      Cards.play(uid, null);
-    }
+    TargetMode.active = false;
+    Cards.play(uid, null);
   },
+
+  /* 选择分支弹窗（自毁改造等 choices 卡）：点选项后带分支重入出牌 */
+  showChoices(uid, card) {
+    const opts = card.choices.map((c, i) =>
+      `<button class="mini-btn" style="display:block;width:100%;margin:6px 0;padding:8px" onclick="UIHand.hideChoices();Cards.play('${uid}', null, ${i})">${c.name}</button>`).join("");
+    Modal.open(`选择：${card.name}`, `<div>${opts}</div>`);
+  },
+  hideChoices() { try { Modal.close(); } catch (e) { /* Modal 未加载 */ } },
 
   /* 点击牌堆/弃牌堆：弹窗列出内容 */
   viewPile(zone, title) {

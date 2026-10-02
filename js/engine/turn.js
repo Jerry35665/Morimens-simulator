@@ -24,6 +24,8 @@ const Turn = {
     if (typeof Tentacle !== "undefined") Tentacle.initBattle();
     /* 命轮开战效果（T8）：冬夜追忆易伤/神王的颂歌狂气 */
     if (typeof Wheels !== "undefined") Wheels.onBattleStart();
+    /* 界域系统（血肉熔炉继承/超维空间重置） */
+    if (typeof RealmSys !== "undefined") RealmSys.onBattleStart();
     for (const a of b.allies) {
       /* 疯狂预兆（通用占位效果：战斗开始获5×等级狂气，逐角色词条待录入） */
       if (a.omenLv > 0) {
@@ -47,10 +49,17 @@ const Turn = {
     b.energy = State.ENERGY_PER_TURN + (b.turn === 1 ? (b.pactEnergyBonus || 0) : 0);
     b.yogenCastsThisTurn = 0;   // 钥令每回合释放次数重置（第1次携带/第2次尘封旧忆）
     b.firstCardPlayed = false;  // 魔女宽檐帽首卡标记重置（T8）
+    b.strikesPlayed = {};       // 长刃·陨 discPerStrike 打击计数重置（T32 实测批）
     if (typeof Tentacle !== "undefined") Tentacle.onTurnStart();   // 触腕姿态每回合开始重置为潮涌
+    if (typeof RealmSys !== "undefined") RealmSys.onTurnStart();   // 血肉融合/熔炉积攒 + 超维精通（T36 界域系统）
     if (window.Yogens) Yogens.tickDelayed();   // 延迟护盾等（下回合开始时结算）
     Log.add(`—— 第 ${b.turn} 回合：我方行动（算力 ${b.energy}） ——`, "turn");
-    Cards.draw(this.DRAW_COUNT);
+    /* 超维回合：超维空间所有卡置入手牌，代替抽牌（维度跃迁；至纯免疫 -25%） */
+    if (typeof RealmSys !== "undefined" && RealmSys.hyperDrawReplacement()) {
+      Log.add(`🌀（超维回合效果已替代本回合抽牌）`);
+    } else {
+      Cards.draw(this.DRAW_COUNT);
+    }
     this.snapshotTurn();   // 记录回合开始状态与手牌（供回溯）
     State.notify();
   },
@@ -71,6 +80,18 @@ const Turn = {
       team: b.team, teamStats: b.teamStats, aiIndex: b.aiIndex,
       playedCount: b.playedCount || 0,   // T34 条件边：本战斗我方累计打牌数（「出牌>=N」条件用）
       firstCardPlayed: b.firstCardPlayed === true,
+      fleshFusion: b.fleshFusion || 0,
+      devourFirst: b.devourFirst === true,
+      annihilUsed: b.annihilUsed === true,
+      hyperPending: b.hyperPending === true,
+      hyperTurnActive: b.hyperTurnActive === true,
+      hyperCards: JSON.parse(JSON.stringify(b.hyperCards || [])),
+      fleshFusion: b.fleshFusion || 0,
+      devourFirst: b.devourFirst === true,
+      annihilUsed: b.annihilUsed === true,
+      hyperPending: b.hyperPending === true,
+      hyperTurnActive: b.hyperTurnActive === true,
+      hyperCards: JSON.parse(JSON.stringify(b.hyperCards || [])),
       tentacle: b.tentacle ? JSON.parse(JSON.stringify(b.tentacle)) : null,
       piles: b.piles,
       allies: b.allies.map(ser), enemies: b.enemies.map(ser)
@@ -96,6 +117,12 @@ const Turn = {
     b.aiIndex = JSON.parse(JSON.stringify(s.aiIndex));
     b.playedCount = s.playedCount || 0;   // T34：打牌计数随快照还原（预览/回溯不虚增）
     b.firstCardPlayed = s.firstCardPlayed === true;   // 首卡标记随快照还原（T8）
+    b.fleshFusion = s.fleshFusion || 0;
+    b.devourFirst = s.devourFirst === true;
+    b.annihilUsed = s.annihilUsed === true;
+    b.hyperPending = s.hyperPending === true;
+    b.hyperTurnActive = s.hyperTurnActive === true;
+    b.hyperCards = s.hyperCards ? JSON.parse(JSON.stringify(s.hyperCards)) : [];
     if (s.tentacle) b.tentacle = JSON.parse(JSON.stringify(s.tentacle));   // 旧存档无此字段时保留现值
     b.piles = JSON.parse(JSON.stringify(s.piles));
     b.allies = s.allies.map(a => { const u = JSON.parse(JSON.stringify(a)); u.def = State.getChar(a.defId); return u; });
@@ -132,6 +159,8 @@ const Turn = {
 
     /* 命轮回合末钩子（T8 四期）：极夜与破晓银钥/阿库特之春/慈悲的哺育/永不停歇的演奏 */
     if (typeof Wheels !== "undefined") Wheels.onTurnEnd();
+    /* 超维回合结束（维度跃迁：-25% 效果仅超维回合内） */
+    if (typeof RealmSys !== "undefined") RealmSys.onTurnEnd();
 
     /* 1. 弃掉手牌（retain 的保留在手） */
     this.discardHand();
@@ -340,6 +369,8 @@ const Turn = {
     if (!b.enemies.some(e => e.hp > 0)) {
       b.phase = "over"; b.result = "win";
       Log.add("========== 🎉 所有敌人被消灭，战斗胜利 ==========", "sys");
+      /* 猩红熔炉：战斗结束积攒 5%maxHp+手牌胚胎×5%，跨战斗 carry（血肉·猩红献祭） */
+      if (typeof RealmSys !== "undefined") RealmSys.onBattleWin();
       State.notify();
       return true;
     }

@@ -109,8 +109,10 @@ function runAllTests() {
   try { dup = State.addAlly("char_rotan", 1); } catch (e) { dup = "rejected"; }
   check("重复唤醒体被拒绝", dup === "rejected" || dup === null);
   check("萝坦基础攻35", rotan.stats.attack === 35, "实际:" + rotan.stats.attack);
-  check("萝坦面板含强效8%", rotan.stats.damageBoost === 8);
-  check("奥吉尔界域精通2/黑印1.2%", ogilvy.stats.realmMastery === 2 && ogilvy.stats.blackImprint === 1.2,
+  /* 二级属性统一基线（用户 10-02 口径）：暴击5/爆伤50/银钥15，其余 0+深化；
+   * 萝坦实录强效 8% 来源待确认（旧面板读数含深化，新口径归 DEEPEN pair）——DATA-TODO */
+  check("萝坦面板强效=0（实录8%待深化对确认）", rotan.stats.damageBoost === 0, "实际:" + rotan.stats.damageBoost);
+  check("奥吉尔界域8/黑印4.8（深化对wiki 界2/黑1.2，SSR星3×(1+3+0)）", ogilvy.stats.realmMastery === 8 && ogilvy.stats.blackImprint === 4.8,
     "实际:" + ogilvy.stats.realmMastery + "/" + ogilvy.stats.blackImprint);
   { // 队伍生命 = Σ体质 × 活体深度 / 100 向上取整（Lv1: 34+24+36+41=135 → ×2.7=364.5→365）
     const expect = Math.ceil((34 + 24 + 36 + 32) * State.depths.live / 100);
@@ -120,7 +122,7 @@ function runAllTests() {
 
   console.log("== 3. 命轮/密契套装/养成等级与属性联动 ==");
   UIGear.setFatewheel(rotan.uid, 0, "fw_rose_name");        // 暴击率+14.4%
-  check("命轮(以蔷薇之名): 会心6.6%→21%", rotan.stats.critRate === 21, "实际:" + rotan.stats.critRate);
+  check("命轮(以蔷薇之名): 暴击5+深化6.4+轮14.4=25.8", rotan.stats.critRate === 25.8, "实际:" + rotan.stats.critRate);
   UIGear.setPact(rotan.uid, 0, "pact_deus_ex");
   UIGear.setPact(rotan.uid, 1, "pact_deus_ex");
   UIGear.setPact(rotan.uid, 2, "pact_deus_ex");
@@ -140,8 +142,8 @@ function runAllTests() {
     UIGear.bumpPactEnhance(rotan.uid, 3, -12);
   }
   UIGear.unsetFatewheel(rotan.uid, 0);
-  check("卸下命轮后会心回落6.6%", rotan.stats.critRate === 6.6, "实际:" + rotan.stats.critRate);
-  check("灵塑适性Lv2: 攻35×1.06=37.1→37", (UIGear.setLv(rotan.uid, "spiritAdaptLv", 1), UIGear.setLv(rotan.uid, "spiritAdaptLv", 1), rotan.stats.attack === 37), "实际:" + rotan.stats.attack);
+  check("卸下命轮后暴击回落11.4（5+萝坦深化6.4）", rotan.stats.critRate === 11.4, "实际:" + rotan.stats.critRate);
+  check("灵塑适性Lv2: 攻35×1.06=37.1→37（灵塑实战生效，仅游戏面板不显示——用户 2026-10-02 澄清）", (UIGear.setLv(rotan.uid, "spiritAdaptLv", 1), UIGear.setLv(rotan.uid, "spiritAdaptLv", 1), rotan.stats.attack === 37), "实际:" + rotan.stats.attack);
   check("灵塑适性上限10级", DBF.spiritAdaptMaxLv === 10);
   UIGear.setLv(rotan.uid, "innerGridLv", 1);
   {
@@ -198,10 +200,25 @@ function runAllTests() {
   DBF.relicDeck = [];                 // 清空默认携带，从零测试装配
   UIGear.toggleRelic("relic_snake_molt");   // 怪蛇残蜕：队伍死亡抵抗+8%
   const ts = State.teamStats();
-  check("队伍属性含造物加成(死抗=均值0+8)", ts.deathResist === 8, "实际:" + ts.deathResist);
-  check("队伍界域精通=求和(12+0+2+2=16)", ts.realmMastery === 16, "实际:" + ts.realmMastery);
+  check("队伍属性含造物加成(死抗=各角色之和0+8)", ts.deathResist === 8, "实际:" + ts.deathResist);
+  check("队伍界域精通=密契12+奥吉尔8+拉蒙娜8=28", ts.realmMastery === 28, "实际:" + ts.realmMastery);
   check("禁忌学识=守密人/均值规则(=1)", ts.tabooKnowledge === 1, "实际:" + ts.tabooKnowledge);
   check("守密人等级存在", State.keeperLv >= 1);
+  /* 造物队伍共享属性泛化（用户 2026-10-03 定案）：界域精通/黑印/强效等键同样只进队伍、不进个人 */
+  const relicOwner4 = State.battle && State.battle.allies[0];
+  const before4 = relicOwner4 ? { rm: relicOwner4.stats.realmMastery, bi: relicOwner4.stats.blackImprint, db: relicOwner4.stats.damageBoost } : null;
+  DBF.relics.push({ id: "relic_tmp_team4", name: "临时·队伍共享测试", statMods: { realmMastery: 5, blackImprint: 3, damageBoost: 2 } });
+  DBF.relicDeck.push("relic_tmp_team4");
+  const ts4 = State.teamStats();
+  check("造物界域/黑印/强效键进队伍属性（基线+5/+3/+2 增量）",
+    ts4.realmMastery === ts.realmMastery + 5 && ts4.blackImprint === ts.blackImprint + 3 && ts4.damageBoost === ts.damageBoost + 2,
+    `实际:${ts4.realmMastery}/${ts4.blackImprint}/${ts4.damageBoost} 基线:${ts.realmMastery}/${ts.blackImprint}/${ts.damageBoost}`);
+  check("造物不进个人属性（队伍成员面板值不变）", relicOwner4 &&
+    relicOwner4.stats.realmMastery === before4.rm &&
+    relicOwner4.stats.blackImprint === before4.bi &&
+    relicOwner4.stats.damageBoost === before4.db);
+  DBF.relicDeck = DBF.relicDeck.filter(x => x !== "relic_tmp_team4");
+  DBF.relics.splice(DBF.relics.findIndex(r => r.id === "relic_tmp_team4"), 1);
   /* T32（2026-10-02）：旧 cardLvMult ×1.02/级 系对「每级+2%」的误读已移除，
    * 基础牌等级成长=倍率成长 scalePerLv 0.02/级（灰机 56 角色全量核验），断言移至 6.5 节 T32 块 */
 
@@ -220,23 +237,23 @@ function runAllTests() {
   }
 
   console.log("== 6. 伤害管线（走队伍血条）==");
-  /* ★ 2026-09-29 实测：每个乘区结算后立即向上取整再进下一区（E2/E3 边界值互证），
-   *   故 4→①ceil(4×1.08)=5→易伤×1.5=7.5→ceil=8（旧模型单次取整得7） */
+  /* ★ 2026-09-29 实测：每个乘区结算后立即向上取整再进下一区（E2/E3 边界值互证）。
+   * 2026-10-02 二级属性基线统一后萝坦强效=0：4→4（无强效乘区）→易伤×1.5=6 */
   const dummy = State.battle.enemies[0];
   const eff4 = { value: 4 };
-  check("① 打击4×1.08=4.32 强效区取整→5", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 5);
+  check("① 打击4（萝坦强效0，无强效乘区）", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 4);
   Buffs.add(dummy, "debuff_vul", 1, null, "测试");
-  check("⑤ 挂易伤后 ceil(5×1.5)=8", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 8);
+  check("⑤ 挂易伤后 ceil(4×1.5)=6", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 6);
   Buffs.add(rotan, "buff_strength", 2, null, "测试", 1);
-  check("③ +力量2 → ceil((5+2)×1.5)=11", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 11);
+  check("③ +力量2 → ceil((4+2)×1.5)=9", Damage.compute({ source: rotan, target: dummy, card: null, eff: eff4 }).final === 9);
 
   console.log("== 6.5 动态卡面 ==");
   {
     const strikeDef = State.getCard("card_rotan_strike");
     const raw = Cards.describeEffects(strikeDef, rotan, "raw").join("；");
-    check("动态卡面raw: 只按属性 → 造成5点伤害(4×1.08)", raw.includes("造成5点伤害"), raw);
+    check("动态卡面raw: 只按属性 → 造成4点伤害", raw.includes("造成4点伤害"), raw);
     const act = Cards.describeEffects(strikeDef, rotan, "actual").join("；");
-    check("动态卡面actual: 含力量+易伤 → 造成11点伤害", act.includes("造成11点伤害"), act);
+    check("动态卡面actual: 含力量+易伤 → 造成9点伤害", act.includes("造成9点伤害"), act);
   }
   { /* T32 基础牌口径（2026-10-02 灰机全量核验 56 角色）：打击/防御=攻/防×(10%+2%×(级-1))、狂气5+1/级；
      * 全 32 张基础卡 scalePerLv=0.02；旧 ×1.02 乘数模型移除 */
@@ -250,7 +267,7 @@ function runAllTests() {
       baseCards.length >= 118 && baseCards.every(c => c.effects[0].scalePerLv === 0.02), "张数:" + baseCards.length);
     rotan.cardLv = 6; State.refreshAlly(rotan);
     const raw6 = Cards.describeEffects(State.getCard("card_rotan_strike"), rotan, "raw").join("；");
-    check("T32 卡Lv6萝坦打击=ceil(35×20%)×1.08→8 且狂气10", raw6.includes("造成8点伤害") && raw6.includes("获得10点狂气"), raw6);
+    check("T32 卡Lv6萝坦打击=ceil(35×20%)→7（无强效乘区）且狂气10", raw6.includes("造成7点伤害") && raw6.includes("获得10点狂气"), raw6);
     rotan.cardLv = 1; State.refreshAlly(rotan);
     rotan.shield = 0;
     Cards.resolveEffect({ op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, rotan, null, { name: "防御", type: "防御" });
@@ -345,24 +362,24 @@ function runAllTests() {
     Buffs.add(c, "buff_strength", 98, null, "test", 1);
     const before = tgt.hp;
     Damage.deal({ source: c, target: tgt, card: null, eff: { value: 477 }, label: "t" });
-    check("力量+98 → 伤害恰好+98（不吃强效）", before - tgt.hp === Math.ceil(477 * 1.08 + 98),
-      "实扣:" + (before - tgt.hp) + "（预期" + Math.ceil(477 * 1.08 + 98) + "）");
+    check("力量+98 → 伤害恰好+98（不吃强效）", before - tgt.hp === 477 + 98,
+      "实扣:" + (before - tgt.hp) + "（预期575）");
     c.buffs = [];
     // 暴击：×(1+暴击伤害%)
     c.stats.critRate = 100; c.stats.critDmg = 115;
     tgt.hp = 999999; tgt.shield = 0;
     const r1 = Damage.deal({ source: c, target: tgt, card: null, eff: { value: 477 }, label: "t" });
     /* 每区取整：ceil(ceil(477×1.08)×2.15)=ceil(516×2.15)=1110（旧单次取整模型为1108） */
-    check("暴击100%率 → ×2.15（115%暴伤，强效先行）", r1.final === Math.ceil(Math.ceil(477 * 1.08) * 2.15),
+    check("暴击100%率 → ×2.15（115%暴伤，强效先行）", r1.final === Math.ceil(477 * 2.15),
       "final:" + r1.final + " crit:" + r1.crit);
     c.stats.critRate = 0;
     const r2n = Damage.compute({ source: c, target: tgt, eff: { value: 477 }, crit: undefined });
-    check("预览调用（无crit参数）不触发暴击", r2n.crit === false && r2n.final === Math.ceil(477 * 1.08), "final:" + r2n.final);
-    check("力量在暴击乘区前：477×1.08+98 → ×2.15", (() => {
+    check("预览调用（无crit参数）不触发暴击", r2n.crit === false && r2n.final === 477, "final:" + r2n.final);
+    check("力量在暴击乘区前：477+98 → ×2.15", (() => {
       Buffs.add(c, "buff_strength", 98, null, "test", 1);
       const rr = Damage.compute({ source: c, target: tgt, eff: { value: 477 }, crit: true });
       c.buffs = [];
-      return Math.abs(rr.final - Math.ceil((Math.ceil(477 * 1.08) + 98) * 2.15)) <= 2 ? "✓ " + rr.final : "✗ " + rr.final;
+      return Math.abs(rr.final - Math.ceil((477 + 98) * 2.15)) <= 2 ? "✓ " + rr.final : "✗ " + rr.final;
     })());
   }
 
@@ -430,13 +447,13 @@ function runAllTests() {
       Buffs.add(rc, "buff_critdmg_up", 1, null, "t", 30);
       const r = Damage.deal({ source: rc, target: tgt, card: null, eff: { value: 100 }, label: "t" });
       rc.buffs = [];
-      return r.crit === true && Math.abs(r.final - Math.ceil(100 * 1.08 * 1.8)) <= 1;
+      return r.crit === true && Math.abs(r.final - Math.ceil(100 * 1.8)) <= 1;
     })());
-    check("临时伤害强效并入强效区(面板8%+50%)", (() => {
+    check("临时伤害强效并入强效区(面板0+50%)", (() => {
       Buffs.add(rc, "buff_boost_up", 1, null, "t", 50);
       const r = Damage.compute({ source: rc, target: b.enemies.find(e => e.hp > 0), eff: { value: 100 } });
       rc.buffs = [];
-      return Math.abs(r.final - Math.ceil(100 * 1.58)) <= 1;
+      return Math.abs(r.final - Math.ceil(100 * 1.5)) <= 1;
     })());
 
     /* 诗页选择 + 星辰庇佑（choice 直传，绕过面板） */
@@ -1141,6 +1158,89 @@ function runAllTests() {
     check("T32建模 无负成长", ratioBad.length === 0, ratioBad.map(k => k.id).join(","));
   }
 
+  /* ---- T32实测批（2026-10-02 用户口径）：力量层数/全队共享/回合层/长刃减费/单击出牌/选择弹窗/姿态分支 ---- */
+  console.log("== 8.21 T32 实测批 ==");
+  {
+    State.newBattle();
+    const a21 = State.addAlly("char_rotan_cetarchon", 70);  // 蚀灭·萝坦（长刃减费/力量）
+    const a21b = State.addAlly("char_doll", 60);     // 队友（共享验证）
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b21 = State.battle;
+    /* ① 力量点数=层数×1点（perCalcAtkPct 点数转层数） */
+    Cards.resolveEffect({ op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 10 }, stacks: 1, target: "self" }, a21, null, { name: "测试" });
+    const expLayers = Math.max(1, Math.round(a21.attack * 0.1));
+    const str21 = a21.buffs.find(x => x.defId === "buff_strength");
+    check("T32实测 力量点数=层数×1点", str21 && str21.stacks === expLayers && str21.per === 1,
+      "层数:" + (str21 ? str21.stacks : "无") + " 预期:" + expLayers);
+    /* ② 全队共享：队友同获力量 */
+    const strMate = a21b.buffs.find(x => x.defId === "buff_strength");
+    check("T32实测 力量全队共享（队友同层）", strMate && strMate.stacks === expLayers);
+    /* ③ 回合 buff 层数模型：1 回合=1 层，每回合 -1 */
+    Buffs.add(a21, "debuff_vul", 3, 3, "测试");
+    const vul21 = a21.buffs.find(x => x.defId === "debuff_vul");
+    check("T32实测 易伤 3回合=3层（roundLayers）", vul21 && vul21.stacks === 3 && vul21.duration == null,
+      "层数:" + (vul21 ? vul21.stacks : "无"));
+    Buffs.tickTurnEnd(a21);
+    check("T32实测 回合结束层数-1", vul21.parent === undefined && (a21.buffs.find(x => x.defId === "debuff_vul") || { stacks: 0 }).stacks === 2);
+    /* ④ 长刃·陨减费：打 2 张打击 → 长刃 4-2=2 费 */
+    b21.energy = 9;
+    Cards.generate("card_rc_strike");
+    const st21 = b21.piles.hand.find(c => c.defId === "card_rc_strike");
+    Cards.play(st21.uid, b21.enemies[0].uid);
+    Cards.generate("card_rc_strike");
+    const st21b = b21.piles.hand.find(c => c.defId === "card_rc_strike");
+    Cards.play(st21b.uid, b21.enemies[0].uid);
+    Cards.generate("card_rc_fallen");
+    const fallen = b21.piles.hand.find(c => c.defId === "card_rc_fallen");
+    const eBefore = b21.energy;
+    Cards.play(fallen.uid, b21.enemies[0].uid);
+    check("T32实测 长刃·陨减费 4-2打击=2费", eBefore - b21.energy === 2, "实耗:" + (eBefore - b21.energy));
+    /* ⑤ 螺湮圆舞姿态分支（潮涌=触腕伤害+生成1触腕；银充×180% 取整） */
+    State.newBattle();
+    const mf = State.addAlly("char_o02", 70);        // 诞妄·墨菲（深海）
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    if (typeof Tentacle !== "undefined" && State.battle.tentacle) {
+      const cnt0 = State.battle.tentacle.count;
+      Cards.generate("card_mf_dance");
+      const dInst = State.battle.piles.hand.find(c => c.defId === "card_mf_dance");
+      Cards.play(dInst.uid, null);
+      check("T32实测 螺湮圆舞潮涌分支：触腕伤害+1条触腕",
+        State.battle.tentacle.count === cnt0 + 1 && (State.battle.tempTentacleDmg || []).length === 1);
+      check("T32实测 银钥按银充×180%取整",
+        Number.isInteger(State.battle.silver));
+    }
+    /* ⑥ 自毁改造选择分支：兴奋=我方全体临时强效 */
+    State.newBattle();
+    State.addAlly("char_doll_inferno", 70);
+    State.addAlly("char_doll", 60);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    Cards.generate("card_di_reform");
+    const rf = State.battle.piles.hand.find(c => c.defId === "card_di_reform");
+    Cards.play(rf.uid, null, 0);   // 兴奋
+    const diAlly = State.battle.allies.find(a => a.def.id === "char_doll_inferno");
+    const boost21 = diAlly.buffs.find(x => x.defId === "buff_boost_up");
+    check("T32实测 自毁改造·兴奋 全队临时强效（32+3×卡Lv级）", boost21 && boost21.per === 32 + 3 * ((diAlly.cardLv || 1) - 1),
+      "per:" + (boost21 ? boost21.per : "无"));
+    /* ⑦ 单击出牌：clickCard 直接打出（不再进选目标模式） */
+    Cards.generate("card_rc_strike");
+    const clickInst = State.battle.piles.hand.find(c => c.defId === "card_rc_strike");
+    const hp21 = State.battle.enemies[0].hp;
+    UIHand.clickCard(clickInst.uid);
+    check("T32实测 单击即打出（自动从上到下索敌）", State.battle.enemies[0].hp < hp21
+      && !State.battle.piles.hand.some(c => c.uid === clickInst.uid));
+    /* ⑧ 队伍聚合口径（用户 2026-10-02 攻略口径）：强效/黑印/死抗=各角色之和 */
+    State.newBattle();
+    const sA = State.addAlly("char_doll", 70), sB = State.addAlly("char_ogilvy", 70);
+    sA.stats.damageBoost = 9.6; sB.stats.damageBoost = 4.2;
+    sA.stats.blackImprint = 1.2; sB.stats.blackImprint = 2.4;
+    const ts21 = State.teamStats();
+    check("T32实测 队伍强效=各角色之和 9.6+4.2=13.8", ts21.damageBoost === 13.8, "实际:" + ts21.damageBoost);
+    check("T32实测 队伍黑印=各角色之和 1.2+2.4=3.6", ts21.blackImprint === 3.6, "实际:" + ts21.blackImprint);
+  }
+
   /* ---- T34：怪物编辑器二期——意图条件边（节点+条件转移；不可解析回落固定循环）----
    * 真实案例：白雪仙女（饱餐>=1→奇迹赐福，两循环）/ 门之钥（等待+出牌>=4 推进）；
    * 回落案例：波3首领（强力攻击未采集=缺目标行）、门之钥四翼渐生（六翼满开未采集） */
@@ -1254,6 +1354,64 @@ function runAllTests() {
     check("T34 圣子.黑羽 免疫意图 实挂 免疫伤害×1（duration=2）",
       bf19.buffs.some(x => x.defId === "buff_damage_immune" && x.stacks === 1 && x.duration === 2),
       bf19.buffs.map(x => x.defId + "×" + x.stacks + "@" + x.duration).join(","));
+  }
+
+  /* ---- 属性对账批（2026-10-02 朵尔 15:08 游戏截图 vs 养成面板）：体质实战口径/裸装对照行/脏数值钳制 ---- */
+  console.log("== 8.22 属性对账批 ==");
+  {
+    State.newBattle();
+    const doll = State.addAlly("char_doll", 70);
+    /* 显式覆盖全部属性相关字段：不受鲸佬模式/本地保存配置影响 */
+    doll.level = 70; doll.personaLv = 12; doll.innerGridLv = 1; doll.spiritAdaptLv = 10;
+    doll.fatewheels = []; doll.fwStacks = [0, 0]; doll.pacts = [];
+    doll.pactDetails = [null, null, null, null, null, null]; doll.pactSetBound = {};
+    State.recalcAllyStats(doll);
+    check("属性对账 主行体质=实战口径 102×1.3→133（与攻/防同含灵塑）",
+      doll.stats.constitutionCombat === 133, "实际:" + doll.stats.constitutionCombat);
+    check("属性对账 公式输入体质保持原始 102（深海共生/星天兽轮/地图队伍生命口径不变）",
+      doll.stats.constitution === 102, "实际:" + doll.stats.constitution);
+    /* 裸装对照 = 游戏「属性详情」面板锚点（剥离 命轮/密契/灵塑；保留 等级+灵格+深化+星级） */
+    const bare = { def: doll.def, level: 70, innerGridLv: 1, personaLv: 12,
+      fatewheels: [], fwStacks: [0, 0], pacts: [], pactDetails: [null, null, null, null, null, null],
+      pactSetBound: {}, spiritAdaptLv: 0 };
+    const naked = State.computeStats(doll.def, 72, State.collectStatMods(bare));
+    check("属性对账 裸装对照三维=游戏面板 102/83/111",
+      naked.constitution === 102 && naked.attack === 83 && naked.defense === 111,
+      `实际:${naked.constitution}/${naked.attack}/${naked.defense}`);
+    check("属性对账 裸装对照二级=游戏面板 狂充14.4/银充36.6/暴击5/爆伤50",
+      naked.gukuRecharge === 14.4 && naked.silverKeyCharge === 36.6 && naked.critRate === 5 && naked.critDmg === 50,
+      `实际:${naked.gukuRecharge}/${naked.silverKeyCharge}/${naked.critRate}/${naked.critDmg}`);
+    const pure = State.computeStats(doll.def, 72, []);
+    check("属性对账 computeStats 纯函数（空mods）=等级基础插值 83/111",
+      pure.attack === 83 && pure.defense === 111, `实际:${pure.attack}/${pure.defense}`);
+    /* 脏数值钳制：超界叠位/强化/词条档不再放大属性 */
+    const gukuFw = DBF.fatewheels.find(f => f.statMods && f.statMods.gukuRecharge);
+    if (gukuFw) {
+      doll.fatewheels = [gukuFw.id]; doll.fwStacks = [999, 0];
+      State.recalcAllyStats(doll);
+      const wm = State.collectStatMods(doll).find(m => (m.from || "").startsWith("命轮·"));
+      check("属性对账 叠位999钳制为12（属性最高2倍）",
+        wm && wm.gukuRecharge === Math.round(gukuFw.statMods.gukuRecharge * 2 * 100) / 100,
+        "实际:" + (wm && wm.gukuRecharge));
+    }
+    doll.fatewheels = [];
+    doll.pactDetails = [{ set: null, mainStat: "gukuRecharge", enhanceLv: 999, bound: false, subs: [{ stat: "gukuRecharge", lv: 99 }] }];
+    State.recalcAllyStats(doll);
+    const pm = State.collectStatMods(doll).find(m => (m.from || "").includes("密契主属性"));
+    const pv = State.collectStatMods(doll).find(m => (m.from || "").includes("密契词条"));
+    check("属性对账 密契强化999钳制12→主属性=2.5×满词条=2", pm && pm.gukuRecharge === 2, "实际:" + (pm && pm.gukuRecharge));
+    check("属性对账 词条档99钳制8→=满词条0.8", pv && pv.gukuRecharge === 0.8, "实际:" + (pv && pv.gukuRecharge));
+    /* 鲸佬模式不自动装密契/命轮（用户 2026-10-03 定案）：maxOut 只拉满养成项，装备全留空 */
+    State.whale = true;
+    const w19 = State.addAlly("char_ogilvy", 70);
+    State.whale = false;
+    check("鲸佬模式 养成全满但命轮/密契全空（装备 mods 零产出）",
+      w19 && w19.personaLv === 12 && w19.spiritAdaptLv === 10 && w19.innerGridLv === 5
+      && (w19.fatewheels || []).every(f => !f)
+      && (w19.pacts || []).length === 0
+      && (w19.pactDetails || []).every(p => !p)
+      && State.collectStatMods(w19).every(m => !(m.from || "").includes("密契") && !(m.from || "").startsWith("命轮·")),
+      "pactDetails已填:" + (w19 && w19.pactDetails.filter(Boolean).length));
   }
 
   renderSummary();

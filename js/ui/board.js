@@ -30,8 +30,14 @@ const UIBoard = {
       const b2 = State.battle;
       const t = b2 ? b2.tentacle : null;
       const fur = b2 && b2.team.resources ? b2.team.resources.furnace || 0 : 0;
+      const perHit = t ? Math.ceil(Tentacle.singleDamage() * (Tentacle.MULT[t.stance] || 1)) : 0;
+      const flesh = typeof RealmSys !== "undefined" && RealmSys.hasFlesh();
+      const hyper = typeof RealmSys !== "undefined" && RealmSys.hasHyper();
+      const realmChips =
+        (flesh ? `<span class="res-chip-mini" title="胚胎融合（猩红献祭）：回合开始+30，满100置「胚胎」入手。点击打开界域系统菜单" onclick="UIBoard.menuRealm()">🧬 融合 ${b2.fleshFusion || 0}/100</span>` : "") +
+        (hyper ? `<span class="res-chip-mini" title="超维空间（维度跃迁）：每回合首张指令卡的复制置入；点击打开菜单（湮灭/进入超维回合）" onclick="UIBoard.menuRealm()">🌀 超维 ${(b2.hyperCards || []).length}</span>` : "");
       resBox.innerHTML = (b2 ? `
-        <span class="res-chip-mini" title="触腕（T7 实装）：深海界域队伍公共资源，回合结束自动攻击前排。E6 v5 公式；点击切换姿态（每回合1次）：潮涌×100% / 静海×50%+护盾 / 怒涛×125%" onclick="Tentacle.cycleStance()">🐙 触腕 ×${t ? t.count : 0}${t ? `·${t.stance}${t.rally ? `·集结${t.rally}` : ""}` : ""}</span>
+        ${realmChips}<span class="res-chip-mini" title="触腕（T7 实装）：深海界域队伍公共资源，回合结束自动攻击前排。点击弹姿态菜单（每回合可切1次）：潮涌×100% / 静海×50%+护盾 / 怒涛×125%" onclick="UIBoard.menuTentacle()">🐙 触腕 ${t ? `${perHit}×${t.count}` : "×0"}${t ? `·${t.stance}${t.rally ? `·集结${t.rally}` : ""}` : ""}</span>
         <span class="res-chip-mini" title="猩红熔炉：血肉界域公共资源（点击调整，结算待实现）" onclick="UIBoard.menuResources()">🔥 熔炉 ×${fur}</span>` : "");
     }
     if (!fill) return;
@@ -65,7 +71,7 @@ const UIBoard = {
       <button title="调整狂气/触腕" onclick="event.stopPropagation();UIBoard.menuAlly('${u.uid}')">调</button>
       <button title="移除" onclick="event.stopPropagation();State.removeUnit('${u.uid}')">✕</button>
     </div>
-    <div class="u-lv">攻 ${u.stats.attack} · 防 ${u.stats.defense} · 强效 ${u.stats.damageBoost}% · 会心 ${u.stats.critRate}/${u.stats.critDmg}%</div>`;
+    <div class="u-lv">攻 ${u.stats.attack} · 防 ${u.stats.defense} · 强效 ${u.stats.damageBoost}% · 暴击 ${u.stats.critRate}/${u.stats.critDmg}%</div>`;
 
     /* 狂气条：第一条(0-100)黄色，第二条(100-200)红色覆盖在第一条上；右侧爆发按钮 */
     const g1 = Math.min(u.guku, 100);
@@ -302,6 +308,62 @@ const UIBoard = {
   },
 
   /* 队伍公共资源调整（熔炉等） */
+  /* 触腕姿态菜单（用户 10-02：点击后选择切哪种姿态，而非直接循环切） */
+  menuTentacle() {
+    const b = State.battle;
+    if (!b) return;
+    const t = b.tentacle;
+    if (!t) { alert("当前队伍没有触腕（需要深海界域成员并开始战斗）"); return; }
+    const mult = { "潮涌": 1.0, "静海": 0.5, "怒涛": 1.25 };
+    const per = Math.ceil(Tentacle.singleDamage() * (mult[t.stance] || 1));
+    const desc = {
+      "潮涌": "×100% ｜ 回合结束自动攻击；保持到下回合开始则 +1 条",
+      "静海": "×50% ｜ 立刻获 8% 最大生命护盾；每次触腕攻击再 +0.2%",
+      "怒涛": "×125% ｜ 造成主动伤害后 1 条触腕追击（50%）；回合结束 -1 条"
+    };
+    let html = `<div class="m-row">当前：<b>${t.stance}</b> ×${t.count} 条${t.rally ? ` · 集结 ${t.rally}` : ""} ｜ 单条伤害 <b>${per}</b></div>
+      <div class="m-row dim">每回合可切换 1 次${t.swapped ? "（本回合已切换）" : ""}：</div>`;
+    for (const s of ["潮涌", "静海", "怒涛"]) {
+      const cur = t.stance === s;
+      const locked = t.swapped && !cur;
+      html += `<div class="m-row">
+        <button class="btn ${cur ? "primary" : ""}" ${cur || locked || !Tentacle.hasDeepSea() ? "disabled" : ""}
+          onclick="Tentacle.setStance('${s}');UIBoard.menuTentacle()">${cur ? "✓ " : ""}${s}</button>
+        <span class="dim">${desc[s]}</span></div>`;
+    }
+    html += `<div class="m-row dim">单条伤害公式：ceil(Σ成员ceil(攻×(1+0.03灵塑))×0.095×(1+面板强效)×姿态)+共生+力量/2（E6 v5）</div>`;
+    Modal.open("触腕姿态", html);
+  },
+
+  /* 界域系统菜单（血肉·猩红献祭 / 超维·维度跃迁，T36 界域系统） */
+  menuRealm() {
+    const b = State.battle;
+    if (!b) return;
+    const flesh = typeof RealmSys !== "undefined" && RealmSys.hasFlesh();
+    const hyper = typeof RealmSys !== "undefined" && RealmSys.hasHyper();
+    let html = "";
+    if (flesh) {
+      const pure = RealmSys.isPureFlesh();
+      html += `<div class="m-row"><b>🧬 猩红献祭</b>${pure ? "（至纯血肉：精通/熔炉积攒翻倍）" : ""}</div>
+        <div class="m-row">胚胎融合：<b>${b.fleshFusion || 0}/100</b>（回合开始+30，生命越低至多+100%；满100置「胚胎」入手）</div>
+        <div class="m-row">猩红熔炉：<b>${b.resources.furnace || 0}</b> / ${RealmSys.maxFurnace()}（回合开始+3%最大生命；战斗结束+5%+手牌胚胎×5%）
+          <button class="btn" onclick="RealmSys.furnaceHeal();UIBoard.menuRealm()">消耗全部熔炉回复等量生命</button></div>
+        <div class="m-row dim">胚胎吞噬：血肉唤醒体狂气爆发时消耗手牌 1 张「胚胎」；队伍每回合首次触发：4%最大生命护盾+2%临时力量（生命越低至多×2，血肉精通按界域精通加成）</div>`;
+    }
+    if (hyper) {
+      const pure = RealmSys.isPureHyper();
+      const cards = (b.hyperCards || []).map(c => Cards.def(c).name);
+      html += `<div class="m-row"><b>🌀 维度跃迁</b>${pure ? "（至纯超维：精通翻倍，超维回合不再−25%）" : ""}${b.hyperTurnActive ? "｜<b>当前为超维回合</b>（效果−25%）" : ""}</div>
+        <div class="m-row">超维空间（${(b.hyperCards || []).length} 张）：${cards.length ? cards.join("、") : "空"}</div>
+        <div class="m-row">
+          <button class="btn" onclick="RealmSys.annihilation();UIBoard.menuRealm()" ${b.annihilUsed || !(b.hyperCards || []).length ? "disabled" : ""}>湮灭（移除最左卡，置「灵感」）</button>
+          <button class="btn" onclick="RealmSys.enterHyperTurn()" ${b.hyperPending || b.hyperTurnActive ? "disabled" : ""}>进入超维回合</button></div>
+        <div class="m-row dim">维度穿梭：每回合首张指令卡的复制置入超维空间；超维精通：界域精通×0.125% 概率回合开始得灵感${pure ? "（至纯×2）" : ""}；进入条件待实测（按钮手动触发）</div>`;
+    }
+    if (!html) html = `<div class="m-row dim">队伍中没有激活血肉/超维界域天赋的唤醒体</div>`;
+    Modal.open("界域天赋系统", html);
+  },
+
   menuResources() {
     const b = State.battle;
     if (!b) return;

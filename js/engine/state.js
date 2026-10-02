@@ -153,7 +153,7 @@ const State = {
     }
     /* ② 无实测：三维用比例表兜底（社区数据，待验证）；
      * 暴击/狂充/银充/界域精通等面板属性不随等级缩放，直接取基础值 */
-    const base = charDef.stats[field] || 0;
+    const base = (charDef.stats || {})[field] || 0;
     if (["constitution", "attack", "defense", "hp"].includes(field))
       return Math.ceil(base * this.ratioAt(level));   // 向上取整（官方确认）
     return base;
@@ -198,6 +198,36 @@ const State = {
     "黑印掉落":     ["blackImprint", 1.2],
     "死亡抵抗":     ["deathResist", 5.6]
   },
+  /* 二级属性统一基线（用户 10-02 口径）：全唤醒体相同；角色差异只来自深化属性+命轮/密契 */
+  BASE_SECONDARY: { critRate: 5, critDmg: 50, silverKeyCharge: 15 },
+
+  /* 深化对解析（T31 连带，wiki enlighten[4] 数据源）：每角色两个深化属性+各自率（层4 值=1 档）。
+   * 面板深化值 = 率×(1+星级+升格数) + 率×max(0, 人格深化−3)（E6 同构公式，强效多点实测验证）。
+   * 强效项在 collectStatMods 统一生成（deepen 段），wiki 无数据角色回落 DEEPEN_SUBS 旧逻辑 */
+  DEEPEN_ENABLED: false,   // 深化数值开关：强效外的深化值实测校准后改 true（奥吉尔推定 8 vs 实录 2 差 4 倍未解）
+  STAT_KEY_MAP: { "暴击率": "critRate", "暴击伤害": "critDmg", "伤害强效": "damageBoost", "界域精通": "realmMastery", "黑印掉落": "blackImprint", "死亡抵抗": "deathResist", "狂气回充等级": "gukuRecharge", "银钥充能等级": "silverKeyCharge" },
+  DEEPEN_CACHE: null,
+  deepenPairOf(ally) {
+    const chs = (window.DBF && DBF.wiki && DBF.wiki.characters) || {};
+    if (!this.DEEPEN_CACHE) {
+      this.DEEPEN_CACHE = {};
+      for (const n of Object.keys(chs)) {
+        const e = (chs[n].enlighten || {})[4];
+        if (!e || !e.effect) continue;
+        const attrs = [...e.effect.matchAll(/\{\{属性\|([^}]+)\}\}(?:\s|<[^>]+>)*?\+?\s*([0-9.]+)/g)]
+          .map(m => ({ cn: m[1], v: +m[2] }))
+          .filter(a => this.STAT_KEY_MAP[a.cn]);
+        if (attrs.length) this.DEEPEN_CACHE[n] = attrs;
+      }
+    }
+    return this.DEEPEN_CACHE[ally.def.name] || null;
+  },
+  getAllyStars(ally) {
+    const per = ((window.DBF && DBF.personal && DBF.personal.characters) || []).find(c => c.name === ally.def.name);
+    if (per && per.stars != null) return per.stars;
+    return ally.def.rarity === "SSR" ? 3 : ally.def.rarity === "SR" ? 1 : 0;   // 无个人数据按稀有度回退
+  },
+
   DEEPEN_SUBS: {
     "蚀灭·萝坦":  ["黑印掉落", "死亡抵抗"],
     "负誓·奥吉尔": ["暴击率", "暴击伤害"],
@@ -215,42 +245,48 @@ const State = {
     return 0;
   },
   collectStatMods(ally) {
+    /* 注：造物不在此处——死亡抵抗/界域精通等为队伍共享属性，只在 teamStats 计一次（2026-10-03 用户定案） */
     const mods = [];
     (ally.fatewheels || []).forEach((fwId, slot) => {
       const fw = this.getFw(fwId);
       if (!fw || !fw.statMods) return;
-      /* 命轮叠位：属性 = 基础 × (1 + 叠位/12)，叠位 0~12（满叠2倍，游戏内实测） */
-      const stacks = (ally.fwStacks && ally.fwStacks[slot]) || 0;
+      /* 命轮叠位：属性 = 基础 × (1 + 叠位/12)，叠位 0~12（满叠2倍，游戏内实测）；
+       * 钳制 0~12：脏存档/旧版超界叠位不再无限放大属性（2026-10-02 属性对账批） */
+      const stacks = Math.max(0, Math.min(12, (ally.fwStacks && ally.fwStacks[slot]) || 0));
       const factor = 1 + stacks / 12;
       const scaled = {};
       for (const [k, v] of Object.entries(fw.statMods)) scaled[k] = Math.round(v * factor * 100) / 100;
       mods.push({ from: "命轮·" + fw.name + (stacks ? `(叠位${stacks})` : ""), ...scaled });
     });
-    /* 人格深化：每层深化属性 = 该角色从 8 个二级属性中选 2 个（=启灵 extra 词条），
-     * 一个 +1×密契满词条、另一个 +0.5×密契满词条（用户 2026-09-29 确认）。
-     * 未录入深化属性的角色回落朵尔型（狂气回充满档 + 银钥充能半档，朵尔升格表实测） */
-    const p = ally.personaLv || 0;
-    if (p > 0) {
-      const pair = this.DEEPEN_SUBS[ally.def.name] || ["狂气回充等级", "银钥充能等级"];
-      const t1 = this.DEEPEN_TERMS[pair[0]], t2 = this.DEEPEN_TERMS[pair[1]];
-      const mod = { from: `人格深化+${p}（${pair[0]}满档/${pair[1]}半档）` };
-      mod[t1[0]] = Math.round(t1[1] * p * 100) / 100;
-      /* 伤害强效改由 E6 面板强效公式结算（T8：率×(1+星级+升格数)+率×max(0,深化-3)），
-       * 不再走「半档×每层」旧算法——避免与 E6 双算（血链·希洛案例） */
-      if (pair[1] !== "伤害强效") mod[t2[0]] = Math.round(t2[1] / 2 * p * 100) / 100;
-      mods.push(mod);
-    }
-    /* E6 面板强效（T8 实装，七面板锚点定案，见 MULTIPLIER-TESTS.md E6 v4 节）：
-     * 面板强效 = 率×(1+星级+升格数) + 率×max(0,人格深化−3)
-     * 升格 = Lv20/30/40/50/60 里程碑共 5 次（Lv60 后不再涨）；率 = 深化组强效档（大1.6/小0.8/无0）
-     * 星级取 DBF.personal 实测（波吕克斯/法洛思 0 星），无个人数据回落 3（多数角色 3 星，E6 口径） */
-    const tier = this.boostTierOf(ally.def.name);
-    if (tier > 0) {
+    /* 深化属性（2026-10-02 朵尔面板实测定案）：面板值 = 率×(1+星级+升格数) + 率×max(0, 人格深化−3)
+     * 率 = wiki enlighten 层4 增量（56 角色全覆盖）；朵尔验证：狂充 0.8×18=14.4 ✓、银钥 1.2×18+15 基线=36.6 ✓
+     * （18 = (1+3星+5升格) + (12深化−3)）；强效同一公式（E6 七面板锚点即此形状）。
+     * 星级取 DBF.personal 实测，无则按稀有度回退 SSR3/SR1/R0 */
+    {
       const per = ((window.DBF && DBF.personal && DBF.personal.characters) || []).find(c => c.name === ally.def.name);
-      const stars = per && per.stars != null ? per.stars : 3;
+      const stars = per && per.stars != null ? per.stars : (ally.def.rarity === "SSR" ? 3 : ally.def.rarity === "SR" ? 1 : 0);
       const ascend = Math.min(5, Math.max(0, Math.floor(ally.level / 10) - 1));
-      const v = tier * (1 + stars + ascend) + tier * Math.max(0, (ally.personaLv || 0) - 3);
-      mods.push({ from: `面板强效(E6：${tier}×(1+星${stars}+升格${ascend})+${tier}×max(0,深化${p}-3))`, damageBoost: Math.round(v * 100) / 100 });
+      const p = ally.personaLv || 0;
+      const dp = this.deepenPairOf(ally);
+      if (dp) {
+        for (const q of dp) {
+          const v = Math.round((q.v * (1 + stars + ascend) + q.v * Math.max(0, p - 3)) * 100) / 100;
+          mods.push({ from: `深化属性·${q.cn}`, [this.STAT_KEY_MAP[q.cn]]: v });
+        }
+      } else if (p > 0 || this.boostTierOf(ally.def.name) > 0) {
+        /* wiki 缺页回落：强效走 BOOST_TIER 硬表（E6 档位），其它深化走 DEEPEN_SUBS 手录/朵尔型 */
+        const pair = this.DEEPEN_SUBS[ally.def.name] || ["狂气回充等级", "银钥充能等级"];
+        const t1 = this.DEEPEN_TERMS[pair[0]], t2 = this.DEEPEN_TERMS[pair[1]];
+        const mod = { from: `人格深化+${p}（${pair[0]}满档/${pair[1]}半档）` };
+        mod[t1[0]] = Math.round(t1[1] * p * 100) / 100;
+        if (pair[1] !== "伤害强效") mod[t2[0]] = Math.round(t2[1] / 2 * p * 100) / 100;
+        if (p > 0) mods.push(mod);
+        const tier = this.boostTierOf(ally.def.name);
+        if (tier > 0) {
+          const v = tier * (1 + stars + ascend) + tier * Math.max(0, p - 3);
+          mods.push({ from: `面板强效(E6：${tier}×(1+星${stars}+升格${ascend})+${tier}×max(0,深化${p}-3))`, damageBoost: Math.round(v * 100) / 100 });
+        }
+      }
     }
     const sb = ally.pactSetBound || {};
     for (const b of this.activePactBonuses(ally)) {
@@ -271,21 +307,25 @@ const State = {
       const bound = !!(pd.bound || (setName && setBound[setName]));
       if (pd.mainStat) {
         const subMax = maxes[pd.mainStat] || 0;
-        const v = subMax * (1 + 1.5 * (pd.enhanceLv || 0) / (DBF.mainStatMaxLv || 12));
+        const enh = Math.max(0, Math.min(DBF.mainStatMaxLv || 12, pd.enhanceLv || 0));   // 钳制 0~12 防脏存档
+        const v = subMax * (1 + 1.5 * enh / (DBF.mainStatMaxLv || 12));
         const final = bound ? Math.round(v * 1.5 * 100) / 100 : Math.round(v * 100) / 100;
         if (final > 0) mods.push({ from: `密契主属性·${(DBF.statNames || {})[pd.mainStat] || pd.mainStat}${bound ? "(结合)" : ""}`, [pd.mainStat]: final });
       }
       for (const sub of (pd.subs || [])) {
-        if (sub && sub.stat && sub.lv > 0) {
-          mods.push({ from: `密契词条·${(DBF.statNames || {})[sub.stat] || sub.stat}`, [sub.stat]: (maxes[sub.stat] || 0) * sub.lv / (DBF.subStatMaxLv || 8) });
+        const slv = sub ? Math.max(0, Math.min(DBF.subStatMaxLv || 8, sub.lv || 0)) : 0;   // 钳制 0~8 防脏存档
+        if (sub && sub.stat && slv > 0) {
+          mods.push({ from: `密契词条·${(DBF.statNames || {})[sub.stat] || sub.stat}`, [sub.stat]: (maxes[sub.stat] || 0) * slv / (DBF.subStatMaxLv || 8) });
         }
       }
     }
-    /* 灵塑适性（星辰天赋）：通用三维每级+3%为占位；专属效果按 wiki 逐级表（getSpiritAdaptInfo 查询） */
+    /* 灵塑适性（星辰天赋）：通用三维每级+3%——**实际生效**（用户 2026-10-02 澄清），
+     * 但游戏「属性详情」面板不显示灵塑贡献（朵尔 Lv70 灵塑10：面板显示 83/111，实战 108/144）；
+     * 对账时须剥离灵塑再比。专属效果按 wiki 逐级表（getSpiritAdaptInfo 查询） */
     const ad = ally.spiritAdaptLv || 0;
     if (ad > 0) {
       const per = DBF.spiritAdaptPerLv || { hpPct: 3, attackPct: 3, defensePct: 3 };
-      mods.push({ from: `灵塑适性 Lv${ad}`, hpPct: per.hpPct * ad, attackPct: per.attackPct * ad, defensePct: per.defensePct * ad });
+      mods.push({ from: `灵塑适性 Lv${ad}（面板不显示、实战生效）`, hpPct: per.hpPct * ad, attackPct: per.attackPct * ad, defensePct: per.defensePct * ad });
     }
     /* 内在灵格已并入基础值计算（effLevel = 等级 + 2×灵格级），不再作为百分比修正 */
     return mods;
@@ -316,48 +356,51 @@ const State = {
     };
   },
 
-  recalcAllyStats(ally) {
-    const def = ally.def, lv = ally.level;
-    const mods = this.collectStatMods(ally);
+  /* 属性数学核心（纯函数，不改单位状态）：养成面板主行与裸装对照行共用（gear.js 传不同 mods） */
+  computeStats(def, effLevel, mods) {
     const pct = (k) => mods.reduce((s, m) => s + (m[k + "Pct"] || 0), 0);
     const flat = (k) => mods.reduce((s, m) => s + (m[k + "Flat"] !== undefined ? m[k + "Flat"] : (m[k] || 0)), 0);
-
-    /* 内在灵格：每级等效 +2 等级的属性成长（effLevel 参与基础值计算） */
-    const effLevel = lv + (ally.innerGridLv || 0) * 2;
 
     const baseHp = this.statAt(def, effLevel, "hp");
     const hp = Math.round(baseHp * (1 + pct("hp") / 100)) + flat("hp");
     const attack = Math.round(this.statAt(def, effLevel, "attack") * (1 + pct("attack") / 100)) + flat("attack");
     const defense = Math.round((this.statAt(def, effLevel, "defense") || 0) * (1 + pct("defense") / 100)) + flat("defense");
+    const baseCon = this.statAt(def, effLevel, "constitution");
 
-    /* 升格型二级属性（朵尔实测）：狂气回充/银钥充能随等级分段成长，不吃等级倍率 */
-    const tier = Math.floor(lv / 10);
-    const sg = def.secGrowth || null;
-    const gukuReBase = sg ? sg.perTierGuku * tier : this.statAt(def, lv, "gukuRecharge");
-    const silverBase = sg ? sg.silverBase + sg.perTierSilver * tier : this.statAt(def, lv, "silverKeyCharge");
-
-    /* E6 档内角色强效由面板强效公式全权结算，跳过旧实录残值防双算（T8） */
-    const boostFromE6 = this.boostTierOf(def.name) > 0;
+    /* 升格型二级属性成长（旧口径）已废弃——二级属性统一基线见 ally.stats 段注释 */
 
     const r2 = (x) => Math.round(x * 100) / 100;   // 浮点显示误差全局修复
-    ally.stats = {
-      constitution: this.statAt(def, effLevel, "constitution"),
+    /* 二级属性统一基线（用户 10-02 口径）：全唤醒体 暴击率5/爆伤50/银钥充能15，其余二级属性基础=0；
+     * 角色差异只来自 深化属性（DEEPEN pair 两项/层）+命轮/密契 statMods（flat）。
+     * 不再读 def.stats/levels 的 gamekee 实录杂值（旧面板读数含深化，与新口径冲突）。
+     * 狂气回充/银钥充能的升格成长（sg）一并废弃——升格成长属旧口径 */
+    return {
+      constitution: baseCon,
+      /* 实战口径体质（灵塑三维%，与攻/防同行口径，仅展示用）；
+       * 公式输入（深海共生/星天兽轮/地图队伍生命/超限爆发）仍读 constitution 原始值——T19 实测口径不动 */
+      constitutionCombat: Math.round(baseCon * (1 + pct("hp") / 100)),
       attack, defense,
       maxHp: hp,
-      critRate: r2(this.statAt(def, lv, "critRate") + flat("critRate")),
-      critDmg: r2(this.statAt(def, lv, "critDmg") + flat("critDmg")),
-      realmMastery: r2(this.statAt(def, lv, "realmMastery") + flat("realmMastery")),
-      damageBoost: r2((boostFromE6 ? 0 : this.statAt(def, lv, "damageBoost")) + flat("damageBoost")),
-      blackImprint: r2(this.statAt(def, lv, "blackImprint") + flat("blackImprint")),
-      deathResist: r2(this.statAt(def, lv, "deathResist") + flat("deathResist")),
-      gukuRecharge: r2(gukuReBase + flat("gukuRecharge")),
-      silverKeyCharge: r2(silverBase + flat("silverKeyCharge"))
+      critRate: r2(State.BASE_SECONDARY.critRate + flat("critRate")),
+      critDmg: r2(State.BASE_SECONDARY.critDmg + flat("critDmg")),
+      realmMastery: r2(flat("realmMastery")),
+      damageBoost: r2(flat("damageBoost")),
+      blackImprint: r2(flat("blackImprint")),
+      deathResist: r2(flat("deathResist")),
+      gukuRecharge: r2(flat("gukuRecharge")),
+      silverKeyCharge: r2(State.BASE_SECONDARY.silverKeyCharge + flat("silverKeyCharge"))
     };
-    ally.maxHp = hp;
-    ally.attack = attack;          // 便捷引用（伤害管线用）
-    ally.defense = defense;        // 便捷引用（护盾/降力按防御%结算用，如 未损的骑士心）
-    if (ally.hpMirror == null) ally.hpMirror = hp;   // 配置变化时由 syncTeamHp 处理
-    return ally.stats;
+  },
+
+  recalcAllyStats(ally) {
+    /* 内在灵格：每级等效 +2 等级的属性成长（effLevel 参与基础值计算） */
+    const stats = this.computeStats(ally.def, ally.level + (ally.innerGridLv || 0) * 2, this.collectStatMods(ally));
+    ally.stats = stats;
+    ally.maxHp = stats.maxHp;
+    ally.attack = stats.attack;          // 便捷引用（伤害管线用）
+    ally.defense = stats.defense;        // 便捷引用（护盾/降力按防御%结算用，如 未损的骑士心）
+    if (ally.hpMirror == null) ally.hpMirror = stats.maxHp;   // 配置变化时由 syncTeamHp 处理
+    return stats;
   },
 
   /* ===== 银钥充能/狂气回冲：等级→收益对照表（用户实测 2026-09-28，收益随等级衰减）=====
@@ -408,24 +451,29 @@ const State = {
     }
   },
 
-  /* 队伍属性合计。界域精通=各唤醒体之和（超好玩攻略口径：队伍值取和、无稀释）；
-   * 伤害强效/黑印/死抗取平均（口径待确认）；+ 造物队伍加成 */
+  /* 队伍属性合计。**伤害强效/黑印/死亡抵抗/界域精通 = 各唤醒体之和**（用户 2026-10-02 攻略口径定案，
+   * 旧「强效/黑印取平均」已改求和）；+ 造物队伍共享属性（队伍级仅计一次，不进个人面板——用户 2026-10-03 定案） */
   teamStats() {
     const b = this.battle;
+    const TEAM_KEYS = ["realmMastery", "damageBoost", "blackImprint", "deathResist"];
     const sum = { realmMastery: 0, damageBoost: 0, blackImprint: 0, deathResist: 0, tabooKnowledge: this.tabooLevel() };
-    if (!b) return sum;
-    for (const a of b.allies) {
-      sum.realmMastery += a.stats.realmMastery;                 // 求和
-      sum.damageBoost += a.stats.damageBoost / Math.max(1, b.allies.length);
-      sum.blackImprint += a.stats.blackImprint / Math.max(1, b.allies.length);
-      sum.deathResist += a.stats.deathResist;
-    }
+    /* 造物：死亡抵抗/界域精通/强效/黑印等队伍共享键直接进队伍属性（无战斗也计入顶栏）；
+     * teamDamageBoost 为旧键名兼容。个人属性永不读造物（collectStatMods 无造物代码） */
     for (const rid of (DBF.relicDeck || [])) {
       const r = this.getRelic(rid);
-      if (r && r.statMods) {
-        sum.damageBoost += r.statMods.teamDamageBoost || 0;
-        sum.deathResist += r.statMods.deathResist || 0;
-      }
+      if (!r || !r.statMods) continue;
+      for (const k of TEAM_KEYS) sum[k] += r.statMods[k] || 0;
+      if (r.statMods.teamDamageBoost) sum.damageBoost += r.statMods.teamDamageBoost;
+    }
+    if (!b) {
+      for (const k of TEAM_KEYS) sum[k] = Math.round(sum[k] * 10) / 10;
+      return sum;
+    }
+    for (const a of b.allies) {
+      sum.realmMastery += a.stats.realmMastery;
+      sum.damageBoost += a.stats.damageBoost;
+      sum.blackImprint += a.stats.blackImprint;
+      sum.deathResist += a.stats.deathResist;
     }
     for (const k of Object.keys(sum)) sum[k] = Math.round(sum[k] * 10) / 10;
     return sum;
@@ -592,12 +640,13 @@ const State = {
     b.allies.push(u);
     this.syncTeamHp();
     this.persist();
-    Log.add(`添加唤醒体：${def.name}（Lv${u.level}，体质 ${u.stats.constitution}（生命 ${u.maxHp}）/ 攻击 ${u.stats.attack} / 防御 ${u.stats.defense}${u.stats.damageBoost ? ` / 强效 ${u.stats.damageBoost}%` : ""}${saved ? "，已应用保存配置" : ""}）`, "sys");
+    Log.add(`添加唤醒体：${def.name}（Lv${u.level}，体质 ${u.stats.constitution}（生命 ${u.maxHp}）/ 攻击 ${u.stats.attack} / 防御 ${u.stats.defense}${u.stats.damageBoost ? ` / 强效 ${u.stats.damageBoost}%` : ""}${saved && !this.whale ? "，已应用保存配置" : ""}）`, "sys");
     this.notify();
     return u;
   },
 
-  /* 氪佬：单个唤醒体按理论最高配置（命轮叠满/密契主属性+词条最大+结合/养成全满） */
+  /* 氪佬：单个唤醒体按理论最高配置（养成全满）；命轮/密契不自动装（用户 2026-10-03 定案，
+   * 部件详情静默满配曾导致「槽位空却有加成」的观感——装备一律由玩家自己配） */
   maxOut(a) {
     if (!a) return;
     const cap = this.levelCap(a);
@@ -606,14 +655,6 @@ const State = {
     a.spiritAdaptLv = 10; a.innerGridLv = 5; a.omenLv = 12;
     a.gukuMax = 200;
     a.fwStacks = [12, 12];
-    const MSP = DBF.mainStatByPart || {};
-    const allSubs = Object.keys(DBF.subStatMax || {});
-    a.pactDetails = [1, 2, 3, 4, 5, 6].map(part => {
-      const ms = (MSP[part] && MSP[part][0]) || "critRate";
-      const subs = allSubs.filter(k => k !== ms).slice(0, 3).map(k => ({ stat: k, lv: DBF.subStatMaxLv || 8 }));
-      return { set: null, mainStat: ms, enhanceLv: DBF.mainStatMaxLv || 12, bound: true, subs };
-    });
-    a.pactSetBound = {};
     this.recalcAllyStats(a);
   },
 

@@ -5,10 +5,28 @@
 
 const Buffs = {
 
-  /* 添加（同名叠层）。per: 点数型buff每层覆盖值（如力量N点）。返回实例或 null */
+  /* 添加（同名叠层）。per: 点数型buff每层覆盖值（如力量N点）。返回实例或 null
+   * T32 实测批（2026-10-02 用户口径）：
+   * ① def.roundLayers（易伤/虚弱/脆弱/重创/戒备）：「N 回合」= N 层，每回合结束 -1 层，0 层移除
+   * ② def.shared（力量/力量降低/戒备/易伤/虚弱/脆弱/重创）：全队共享——施加/减层作用于该侧全体 */
   add(unit, buffId, stacks = 1, duration = null, note = "", per = null) {
     const def = State.getBuff(buffId);
     if (!def) { Log.add(`未知buff: ${buffId}`, "sys"); return null; }
+    if (def.shared) {
+      const side = unit.side === "ally" ? State.battle.allies : State.battle.enemies;
+      let first = null;
+      for (const u of side) {
+        if (u.hp <= 0) continue;
+        const inst = this._addOne(u, def, stacks, duration, first ? "" : note, per);
+        if (!first) first = inst;
+      }
+      return first;
+    }
+    return this._addOne(unit, def, stacks, duration, note, per);
+  },
+
+  _addOne(unit, def, stacks, duration, note, per) {
+    const buffId = def.id;
     let inst = unit.buffs.find(x => x.defId === buffId);
     if (!inst) {
       inst = {
@@ -23,11 +41,17 @@ const Buffs = {
     }
     inst.stacks += stacks;
     if (def.maxStacks) inst.stacks = Math.min(inst.stacks, def.maxStacks);
-    if (duration != null) inst.duration = duration;
+    if (def.roundLayers && duration != null) {
+      /* 「N 回合」= N 层：层即剩余回合（用户口径 2026-10-02），不再走 duration 倒计时 */
+      inst.duration = null;
+    } else if (duration != null) {
+      inst.duration = duration;
+    }
 
     Log.add(
       `${unit.def.name} 获得 <b class="${def.kind === "debuff" ? "warn-text" : ""}">${def.name}</b>×${inst.stacks}` +
       (per != null ? `（每层${per > 0 ? "+" : ""}${per}）` : "") +
+      (def.shared ? "（全队共享）" : "") +
       (inst.duration != null ? `（剩 ${inst.duration} 回合）` : "") +
       (def.stack === "unknown" ? ' <span class="warn-text">⟨叠加规则未确认⟩</span>' : "") +
       (note ? ` <span class="dim">${note}</span>` : ""), "sys"
@@ -36,12 +60,18 @@ const Buffs = {
     return inst;
   },
 
-  /* 减少层数 / 移除 */
+  /* 减少层数 / 移除（shared 类同步全队） */
   removeStacks(unit, buffId, stacks = Infinity) {
-    const inst = unit.buffs.find(x => x.defId === buffId);
-    if (!inst) return;
-    inst.stacks -= stacks;
-    if (inst.stacks <= 0) unit.buffs = unit.buffs.filter(x => x !== inst);
+    const def = State.getBuff(buffId);
+    const units = def && def.shared
+      ? (unit.side === "ally" ? State.battle.allies : State.battle.enemies)
+      : [unit];
+    for (const u of units) {
+      const inst = u.buffs.find(x => x.defId === buffId);
+      if (!inst) continue;
+      inst.stacks -= stacks;
+      if (inst.stacks <= 0) u.buffs = u.buffs.filter(x => x !== inst);
+    }
     State.notify();
   },
 
@@ -70,6 +100,13 @@ const Buffs = {
       if (inst.duration != null) {
         inst.duration -= 1;
         if (inst.duration <= 0) {
+          Log.add(`${unit.def.name} 的 ${def.name} 效果结束`, "sys");
+          unit.buffs = unit.buffs.filter(x => x !== inst);
+        }
+      } else if (def.roundLayers && inst.stacks > 0) {
+        /* 「N 回合」= N 层：每回合 -1 层（用户口径 2026-10-02） */
+        inst.stacks -= 1;
+        if (inst.stacks <= 0) {
           Log.add(`${unit.def.name} 的 ${def.name} 效果结束`, "sys");
           unit.buffs = unit.buffs.filter(x => x !== inst);
         }

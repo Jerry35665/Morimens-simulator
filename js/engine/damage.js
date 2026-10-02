@@ -191,6 +191,15 @@ const Damage = {
       }
     }
 
+    /* 超维回合 -25%（维度跃迁：伤害/护盾/生命回复等减 25%；至纯超维免疫——RealmSys.hyperDamageMul） */
+    if (!ignoreBuffs && typeof RealmSys !== "undefined") {
+      const mul = RealmSys.hyperDamageMul();
+      if (mul !== 1) {
+        base = Math.ceil(base * mul);
+        steps.push({ label: "🌀 超维回合", value: base, factorText: `× ${mul}`, note: "超维回合造成的效果 −25%" });
+      }
+    }
+
     const final = base > 0 ? Math.ceil(base) : 0;
     steps.push({ label: "⑦ 最终伤害", value: final, note: "向上取整（官方群确认：游戏数据均向上取整）" });
     return { final, steps, warnings, crit: isCrit };
@@ -238,9 +247,11 @@ const Damage = {
   },
 
   /* 护盾统一入口（T8 三期）：命轮「护盾提高X%」（blockPct）在此乘算——
-   * 各获得护盾的路径（卡牌 block/钥令/触腕静海/延迟护盾）统一走本方法 */
+   * 各获得护盾的路径（卡牌 block/钥令/触腕静海/延迟护盾）统一走本方法；
+   * 超维回合 -25%（维度跃迁：护盾减 25%）同在此结算 */
   addShield(unit, v, label = "") {
     let f = 1;
+    if (typeof RealmSys !== "undefined" && State.battle && State.battle.hyperTurnActive) f *= RealmSys.hyperDamageMul();
     if (typeof Wheels !== "undefined" && unit.side === "ally" && unit.fatewheels) {
       const bp = Wheels.combatMods(unit).blockPct;
       if (bp > 0) {
@@ -298,6 +309,10 @@ const Damage = {
   },
 
   heal(unit, amount, label) {
+    /* 超维回合 -25%（维度跃迁：生命回复减 25%；至纯超维免疫） */
+    if (typeof RealmSys !== "undefined" && State.battle && State.battle.hyperTurnActive) {
+      amount = Math.ceil(amount * RealmSys.hyperDamageMul());
+    }
     /* 重创（healPct 负）：受到的生命回复降低（词条 2026-09-23）+ 命轮常驻治疗增益（T8 二期，灵魂诞生+10%）
      * 两来源同区加算：factor = (1+命轮healPct/100) × 重创聚合系数 */
     let factor = 1;

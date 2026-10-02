@@ -119,34 +119,55 @@ const Cards = {
     }
   },
 
-  /* 出牌主流程：算力检查 → 结算 effects → 进弃牌/消除 → 狂气爆发清空 */
-  play(uid, targetUid) {
+  /* 出牌主流程：算力检查 → 结算 effects → 进弃牌/消除 → 狂气爆发清空
+   * T32 实测批（2026-10-02）：未传目标时攻击牌自动从上到下取首个存活敌人（单击即打出）；
+   * choices 卡（自毁改造等）先弹选择；stances 卡（螺湮圆舞）按当前触腕姿态分支 */
+  play(uid, targetUid, choiceIdx = null) {
     const b = State.battle;
     if (!b || b.phase !== "play") { alert("当前不在出牌阶段"); return; }
     const inst = b.piles.hand.find(c => c.uid === uid);
     if (!inst) return;
     const card = this.def(inst);
+    /* 选择分支：未带 choiceIdx 时交回 UI 弹窗，选择后重入（⚠ UIHand 是顶层 const，不在 window 上，必须用 typeof 探测） */
+    if (card.choices && card.choices.length && choiceIdx == null) {
+      if (typeof UIHand !== "undefined" && UIHand.showChoices) { UIHand.showChoices(inst.uid, card); return; }
+      choiceIdx = 0;   // 无 UI 环境（测试/沙盒）取第一分支
+    }
     const owner = b.allies.find(a => a.def.id === card.owner) || b.allies[0];
     if (!owner) { alert("场上没有我方单位"); return; }
-    const target = targetUid ? State.findUnit(targetUid) : null;
+    let target = targetUid ? State.findUnit(targetUid) : null;
+    /* 自动索敌：攻击牌从上到下首个存活敌人；我方牌默认打出生效者 */
+    if (!target) {
+      if (card.target === "enemy") target = b.enemies.find(e => e.hp > 0) || null;
+      else if (card.target === "ally") target = owner;
+    }
     if (card.target === "enemy" && (!target || target.side !== "enemy")) { alert("请先选择一个敌方目标"); return; }
     if (card.target === "ally" && (!target || target.side !== "ally")) { alert("请选择一个我方目标"); return; }
 
     /* 算力检查（gamekee：每回合初始5点算力；狂气爆发不消耗算力）
      * X 费（无边荒影，用户 2026-10-01 定案）：cost="X"=打出消耗所有算力（0 算力也可打出）；银钥按实耗结算
-     * 命轮减费（T8 二期，巨人之刃）：inst.disc=本回合算力消耗-1（爆发时 roll，回合末清） */
+     * 命轮减费（T8 二期，巨人之刃）：inst.disc=本回合算力消耗-1（爆发时 roll，回合末清）
+     * 长刃·陨（T32 实测批）：本回合每打出 1 张「打击」，下次打出算力 -1（discPerStrike） */
     const isBurst = card.type === "狂气爆发";
     if (!isBurst) {
       const isX = card.cost === "X";
-      const disc = inst.disc || 0;
+      let disc = inst.disc || 0;
+      if (card.discPerStrike) {
+        const n = (b.strikesPlayed && b.strikesPlayed[owner.uid]) || 0;
+        if (n > disc) {
+          disc = n;
+          Log.add(`<span class="dim">${card.name} 减费：本回合已打出 ${n} 张「打击」→ 算力 -${n}</span>`, "sys");
+        }
+      }
       const spend = isX ? b.energy : Math.max(0, card.cost - disc);
-      if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(命轮减费)` : ""}）`); return; }
+      if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(减费)` : ""}）`); return; }
       b.energy -= spend;
       delete inst.disc;   // 减费随打出消耗
-      /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减 */
+      /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减（取整，用户 2026-10-02） */
       const skLevel = (owner.stats && owner.stats.silverKeyCharge) || 15;
-      b.silver += State.silverPerCost(skLevel) * spend;
-      if (isX) Log.add(`<span class="dim">X 费：消耗全部算力 ${spend} 点（银钥按实耗 +${State.silverPerCost(skLevel) * spend}）</span>`, "sys");
+      const silverGain = Math.round(State.silverPerCost(skLevel) * spend);
+      b.silver += silverGain;
+      if (isX) Log.add(`<span class="dim">X 费：消耗全部算力 ${spend} 点（银钥按实耗 +${silverGain}）</span>`, "sys");
     } else {
       if (owner.guku < 100) Log.add(`<span class="warn-text">注意：狂气不足100仍打出了爆发卡（沙盒模式不阻止）</span>`, "sys");
       /* 官方词条（2026-09-23）：释放狂气爆发后剩余狂气减半（超限语境）；普通爆发仍清零 */
@@ -159,8 +180,26 @@ const Cards = {
 
     /* 魔女宽檐帽首卡判定（T8）：本回合第一张指令卡标记在结算后置位——结算中的 compute 读到 false 即首卡 */
     const wasFirstCard = b.firstCardPlayed === false;
-    for (const eff of (inst.upgraded && card.upgrade ? card.upgrade.effects : card.effects)) {
+    /* 选择分支（自毁改造等 choices 卡，choiceIdx 由弹窗回传）/ 姿态分支（螺湮圆舞按当前触腕姿态）——T32 实测批 */
+    let effList = (inst.upgraded && card.upgrade ? card.upgrade.effects : card.effects);
+    if (card.choices && card.choices.length && choiceIdx != null && card.choices[choiceIdx]) {
+      effList = card.choices[choiceIdx].effects || [];
+      Log.add(`↪ 选择「${card.choices[choiceIdx].name}」`, "sys");
+    }
+    if (card.stances && typeof Tentacle !== "undefined" && b.tentacle) {
+      const branch = card.stances[b.tentacle.stance] || [];
+      effList = [...effList, ...branch];
+      if (branch.length) Log.add(`↪ 触腕姿态「${b.tentacle.stance}」分支`, "sys");
+    }
+    for (const eff of effList) {
       this.resolveEffect(eff, owner, target, card);
+    }
+    /* 维度穿梭（T36 界域系统）：每回合首次打出指令卡后，临时原始复制置入超维空间 */
+    if (wasFirstCard && typeof RealmSys !== "undefined") RealmSys.onFirstCardPlayed(card);
+    /* 打击计数（长刃·陨 discPerStrike）：本回合每打出 1 张「打击」+1（按打出生效者计） */
+    if (/^(基础)?打击$/.test(card.name || "")) {
+      b.strikesPlayed = b.strikesPlayed || {};
+      b.strikesPlayed[owner.uid] = (b.strikesPlayed[owner.uid] || 0) + 1;
     }
     if (wasFirstCard) b.firstCardPlayed = true;
     b.playedCount = (b.playedCount || 0) + 1;   // T34 条件边：「出牌>=N」计数（爆发卡走 releaseBurst 不计）
@@ -236,13 +275,14 @@ const Cards = {
           break;
         case "buff": {
           const verb = eff.target === "all_enemies" ? "对所有敌人施加"
+            : eff.target === "all_allies" ? "对我方全体施加"
             : eff.target === "enemy" ? "对目标施加"
             : eff.target === "ally" ? "为目标施加" : "获得";
           let perTxt = eff.per ? `（每层${eff.per > 0 ? "+" : ""}${eff.per}）` : "";
           if (eff.perCalcAtkPct) {
             const pct = eff.perCalcAtkPct.base + (eff.perCalcAtkPct.perLv || 0) * (lv - 1);
             const v = Math.round((source.attack || 0) * pct / 100);
-            perTxt = `（+${v}，攻×${Math.round(pct * 10) / 10}%）`;
+            perTxt = `（${v}，攻×${Math.round(pct * 10) / 10}%）`;
           } else if (eff.perCalcDefPct) {
             const pct = eff.perCalcDefPct.base + (eff.perCalcDefPct.perLv || 0) * (lv - 1);
             const v = Math.round((source.defense || 0) * pct / 100);
@@ -251,9 +291,24 @@ const Cards = {
             const v = eff.perFlat.base + (eff.perFlat.perLv || 0) * (lv - 1);
             perTxt = `（${Math.round(v * 10) / 10}点）`;
           }
-          out.push(`${verb}${eff.stacksAtkPct
-            ? `${Math.max(1, Math.round((source.attack || 0) * eff.stacksAtkPct.base / 100))}层（攻×${eff.stacksAtkPct.base}%）`
-            : `${eff.stacks || 1}层`}${buffName(eff.buffId)}${perTxt}`);
+          /* 力量/力量降低：点数=层数×1点（用户 2026-10-02 口径） */
+          const isStrength = eff.buffId === "buff_strength" || eff.buffId === "debuff_strength_down";
+          let layerTxt = `${eff.stacks || 1}层`;
+          if (eff.stacksAtkPct) {
+            layerTxt = `${Math.max(1, Math.round((source.attack || 0) * eff.stacksAtkPct.base / 100))}层（攻×${eff.stacksAtkPct.base}%）`;
+          } else if (isStrength && (eff.perCalcAtkPct || eff.perCalcDefPct || eff.perFlat || eff.per)) {
+            const pts = eff.perCalcAtkPct ? Math.round((source.attack || 0) * (eff.perCalcAtkPct.base + (eff.perCalcAtkPct.perLv || 0) * (lv - 1)) / 100)
+              : eff.perCalcDefPct ? Math.round((source.defense || 0) * (eff.perCalcDefPct.base + (eff.perCalcDefPct.perLv || 0) * (lv - 1)) / 100)
+              : eff.perFlat ? Math.round(eff.perFlat.base + (eff.perFlat.perLv || 0) * (lv - 1))
+              : eff.per;
+            layerTxt = `${Math.max(1, Math.round(pts))}层`;
+            perTxt = "（每层1点）";
+          } else if (eff.stacksDefPct) {
+            const pct = eff.stacksDefPct.base + (eff.stacksDefPct.perLv || 0) * (lv - 1);
+            layerTxt = `${Math.max(1, Math.round((source.defense || 0) * pct / 100))}层（防×${pct}%）`;
+          }
+          if (isStrength && !eff.perCalcAtkPct && !eff.perCalcDefPct && !eff.perFlat && !eff.per) perTxt = "（每层1点）";
+          out.push(`${verb}${layerTxt}${buffName(eff.buffId)}${perTxt}`);
           break;
         }
         case "draw": out.push(`抽${eff.value}张牌`); break;
@@ -320,9 +375,13 @@ const Cards = {
         break;
       }
       case "buff": {
+        /* T32 实测批（2026-10-02 用户口径）：
+         * all_allies 目标=我方全体；力量/力量降低「点数=层数×1点」（perCalc 系与 perFlat 的点数转为层数，每层 1 点） */
         const ts = eff.target === "all_enemies"
           ? State.battle.enemies.filter(e => e.hp > 0)
-          : [eff.target === "enemy" || eff.target === "ally" ? target : source].filter(Boolean);
+          : eff.target === "all_allies"
+            ? State.battle.allies.filter(a => a.hp == null || a.hp > 0)   // 我方单位 hp 在队伍共享血条上（undefined=存活）
+            : [eff.target === "enemy" || eff.target === "ally" ? target : source].filter(Boolean);
         /* perCalcAtkPct：按攻击力百分比计算每层点数（如 超越之目 攻×(2.4+0.6×技能等级)% 力量）
          * perCalcDefPct：按防御力百分比计算每层点数（如 无边荒影 防×(3.2+0.8×技能等级)% 降力）
          * perFlat：每层固定点数随技能等级成长（如 未损的骑士心 (3.2+0.8×技能等级)点力量） */
@@ -337,11 +396,22 @@ const Cards = {
           const lv = source.cardLv || 1;
           per = Math.round((eff.perFlat.base + (eff.perFlat.perLv || 0) * (lv - 1)) * 10) / 10;
         }
-        /* stacksAtkPct（T32 建模批）：层数/点数=攻击力×X%（如 中毒层数、反击点数），最低 1 */
+        /* stacksAtkPct（T32 建模批）：层数/点数=攻击力×X%（如 中毒层数、反击点数），最低 1
+         * stacksDefPct（T32 实测批）：点数=防御力×X%（如 自毁改造·诅咒 失力） */
         let stacks = eff.stacks || 1;
         if (eff.stacksAtkPct) {
           const pct = eff.stacksAtkPct.base + (eff.stacksAtkPct.perLv || 0) * ((source.cardLv || 1) - 1);
           stacks = Math.max(1, Math.round((source.attack || 0) * pct / 100));
+        }
+        if (eff.stacksDefPct) {
+          const pct = eff.stacksDefPct.base + (eff.stacksDefPct.perLv || 0) * ((source.cardLv || 1) - 1);
+          stacks = Math.max(1, Math.round((source.defense || 0) * pct / 100));
+        }
+        /* 力量/力量降低：点数=层数，每层 1 点（用户 2026-10-02 口径）——perCalc/perFlat 的点数转为层数 */
+        const isStrength = eff.buffId === "buff_strength" || eff.buffId === "debuff_strength_down";
+        if (isStrength && per != null) {
+          stacks = Math.max(1, Math.round(per));
+          per = 1;
         }
         for (const t of ts) Buffs.add(t, eff.buffId, stacks, eff.duration, card.name, per);
         break;
@@ -386,6 +456,17 @@ const Cards = {
         source.tentacles += eff.value;
         Log.add(`${source.def.name} 获得触腕 ×${eff.value}（当前 ${source.tentacles} 条）`, "good");
         break;
+      case "tentacleGain":
+        /* 触腕池 +N（螺湮圆舞潮涌等：生成 1 条触腕）——T32 实测批 */
+        if (typeof Tentacle !== "undefined" && State.battle && State.battle.tentacle) {
+          State.battle.tentacle.count += eff.value;
+          Log.add(`🐙 触腕 +${eff.value}（当前 ${State.battle.tentacle.count} 条）`, "good");
+        }
+        break;
+      case "tentacleDmg":
+        /* 临时触腕伤害：触腕伤害 +[攻×X%]（T32 实测批） */
+        if (typeof Tentacle !== "undefined") Tentacle.addTempDmg(source, eff.pct);
+        break;
       case "heal": {
         const t = eff.target === "ally" ? target : source;
         let v = (eff.value || 0) + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
@@ -428,6 +509,8 @@ const Cards = {
     Log.add(`${ally.def.name} 狂气剩余 ${ally.guku}${isOverdrive ? "（超限减半）" : ""}`, "sys");
     /* 触腕集结（T7）：深海队爆发后 +1 层（回合末每层驱使 1 条触腕；深海精通概率额外层） */
     if (typeof Tentacle !== "undefined") Tentacle.onBurst(ally);
+    /* 胚胎吞噬（血肉·猩红献祭）：血肉唤醒体爆发消耗手牌胚胎，触发护盾+力量 */
+    if (typeof RealmSys !== "undefined") RealmSys.onBurst(ally);
     /* 命轮爆发钩子（T8）：巨人之刃爆伤+60%/神王的颂歌他人获6狂气/致挚友/心之壁垒/圣火等（pre=本次狂气消耗） */
     if (typeof Wheels !== "undefined") Wheels.onBurst(ally, pre);
     Turn.checkEnd();

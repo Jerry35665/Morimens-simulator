@@ -1159,6 +1159,11 @@ const Collector = {
       this.runMaxHp = (typeof State !== "undefined" && State.battle && State.battle.team && State.battle.team.maxHp) || 0;
       this.runHp = this.runMaxHp;
       this.mapPos = this.findSpawnKey();
+      /* T35：新一把的难度=顶栏选择器（非战斗中才同步）——关卡按所选难度逐波匹配记录 */
+      if (typeof State !== "undefined" && State.battle && !["play", "enemy"].includes(State.battle.phase)) {
+        const sel = document.getElementById("difficulty-select");
+        if (sel && sel.value) State.battle.difficulty = sel.value;
+      }
     }
     this.saveMap(); this.renderMap();
   },
@@ -1203,9 +1208,10 @@ const Collector = {
     this.setStatus(`已导入地图（${n} 格）`);
   },
 
-  /* 地图 JSON → 应用到当前地图（importMap/importLevel 共用）；返回有效格数 */
-  _applyMapJson(m) {
-    const cells = {};
+  /* 地图 JSON → 应用到当前地图（importMap/importLevel 共用）；merge=true 时并入现有格子（同位覆盖）；
+   * 返回有效格数 */
+  _applyMapJson(m, merge = false) {
+    const incoming = {};
     for (const [k, v] of Object.entries(m.cells)) {
       const [r, c] = k.split(",").map(Number);
       if (!Number.isInteger(r) || !Number.isInteger(c) || r < 0 || r >= this.MAP_ROWS || c < 0 || c >= this.MAP_COLS) continue;
@@ -1222,11 +1228,12 @@ const Collector = {
       if (Array.isArray(v.relics)) cell.relics = v.relics.slice(0, 3)
         .map(x => ({ name: String((x && x.name) || "").slice(0, 20), price: Math.max(0, parseInt(x && x.price, 10) || 0), gold: !!(x && x.gold) }));
       if (v.sacs) cell.sacs = parseInt(v.sacs, 10) || 0;
-      cells[r + "," + c] = cell;
+      incoming[r + "," + c] = cell;
     }
-    if (!Object.keys(cells).length) return 0;
-    this.mapCells = { name: m.name || "", cells };
-    this.mapPos = (m.pos && cells[m.pos]) ? m.pos : null;
+    if (!Object.keys(incoming).length) return 0;
+    const cells = merge ? { ...((this.mapCells && this.mapCells.cells) || {}), ...incoming } : incoming;
+    this.mapCells = { name: merge ? ((this.mapCells && this.mapCells.name) || m.name || "") : (m.name || ""), cells };
+    this.mapPos = (m.pos && cells[m.pos]) ? m.pos : (merge ? this.mapPos : null);
     this.runKeys = parseInt(m.keys, 10) || 0;
     this.runHei = parseInt(m.hei, 10) || 0;
     this.runMaxHp = parseInt(m.maxHp, 10) || 0;
@@ -1260,8 +1267,9 @@ const Collector = {
     const name = this.win.prompt(`关卡名称（${battleCells} 个战斗格）`, this.mapCells.name || "");
     if (name === null) return;
     const lvl = this.buildLevel(name);
+    const n = this.saveLevelToLib(lvl);
     this.copyText(JSON.stringify(lvl),
-      `关卡「${lvl.name}」已复制：${Object.keys(cells).length} 格 + ${lvl.battles.length}/${battleCells} 场战斗${lvl.diff ? `（${lvl.diff}）` : ""}——粘贴保存或分享`);
+      `关卡「${lvl.name}」已入库（第 ${n} 个）并复制到剪贴板：${Object.keys(cells).length} 格 + ${lvl.battles.length}/${battleCells} 场战斗${lvl.diff ? `（${lvl.diff}）` : ""}——搜索面板「关卡」页签可直接载入`);
   },
 
   importLevel() {
@@ -1274,18 +1282,57 @@ const Collector = {
     if (!m || m.fmt !== "morimens-level-1" || !m.map || typeof m.map !== "object" || !m.map.cells) {
       this.setStatus("格式不对（需为「📦存关卡」导出的关卡 JSON）"); return;
     }
+    if (!this._applyLevel(m)) return;
+    this.saveLevelToLib(m);   // 粘贴过的关卡自动入库，之后搜索面板直接选择
+  },
+
+  /* 关卡 JSON → 应用（确认+关卡地图并入当前地图+同号战斗替换）；供 importLevel/关卡库载入共用 */
+  _applyLevel(m) {
     const battles = (Array.isArray(m.battles) ? m.battles : []).filter(b =>
       b && b.fields && Array.isArray(b.fields.batch) && b.fields.fno).slice(0, 200);
     const diffs = [...new Set(battles.map(b => this.normalizeDiff(b.fields.diff)).filter(Boolean))];
-    if (!this.win.confirm(`导入关卡「${m.name || "未命名"}」？\n\n· 覆盖当前地图（${Object.keys(m.map.cells).length} 格）\n· 以关卡内版本替换 ${battles.length} 场同号战斗${diffs.length ? `\n· 难度：${diffs.join("/")}` : ""}`)) return;
-    const n = this._applyMapJson(m.map);
-    if (!n) { this.setStatus("关卡地图没有有效格子"); return; }
+    const cellsIncoming = Object.keys((m.map && m.map.cells) || {}).length;
+    const curCells = (this.mapCells && this.mapCells.cells) || {};
+    const cellsTotal = Object.keys({ ...curCells, ...((m.map && m.map.cells) || {}) }).length;
+    if (!this._confirm(`载入关卡「${m.name || "未命名"}」？\n\n· 关卡地图 ${cellsIncoming} 格并入当前地图（共 ${cellsTotal} 格，同位覆盖）\n· 以关卡内版本替换 ${battles.length} 场同号战斗${diffs.length ? `\n· 难度：${diffs.join("/")}` : ""}`)) return false;
+    const n = this._applyMapJson(m.map || {}, true);
+    if (!n) { this.setStatus("关卡地图没有有效格子"); return false; }
     const nos = new Set(battles.map(b => String(b.fields.fno)));
     const list = this._load().filter(e => !(e.cat === "monster" && nos.has(String((e.fields && e.fields.fno) || ""))));
     for (const b of battles) list.push({ time: b.time || "关卡导入", cat: "monster", catLabel: "怪物·战斗", icon: "👹", fields: b.fields });
     this._save(list);
     this.renderList();
-    this.setStatus(`已导入关卡「${m.name || "未命名"}」：${n} 格 + ${battles.length} 场战斗${diffs.length ? `（${diffs.join("/")}）` : ""}`);
+    this.setStatus(`已载入关卡「${m.name || "未命名"}」：${n} 格 + ${battles.length} 场战斗${diffs.length ? `（${diffs.join("/")}）` : ""}`);
+    return true;
+  },
+  _confirm(msg) { return this.isOpen() ? this.win.confirm(msg) : window.confirm(msg); },
+
+  /* 关卡库（localStorage morimens_levels）：搜索面板「关卡」页签直接选择载入，免去复制粘贴 */
+  levelLib() {
+    try { return JSON.parse(localStorage.getItem("morimens_levels") || "[]"); } catch (e) { return []; }
+  },
+  saveLevelToLib(lvl) {
+    const list = this.levelLib().filter(x => x.name !== lvl.name);   // 同名覆盖
+    list.push({ name: lvl.name, diff: lvl.diff || "", savedAt: new Date().toLocaleString("zh-CN", { hour12: false }),
+      cells: Object.keys((lvl.map && lvl.map.cells) || {}).length, battleCount: (lvl.battles || []).length, level: lvl });
+    localStorage.setItem("morimens_levels", JSON.stringify(list));
+    return list.length;
+  },
+  loadLevelFromLib(i) {
+    const it = this.levelLib()[i];
+    if (!it) return;
+    if (this._applyLevel(it.level)) {
+      if (typeof UISearch !== "undefined") UISearch.render();
+    }
+  },
+  delLevelFromLib(i) {
+    const list = this.levelLib();
+    if (!list[i]) return;
+    if (this._confirm(`删除关卡「${list[i].name}」？（不影响已导入的地图与战斗记录）`)) {
+      list.splice(i, 1);
+      localStorage.setItem("morimens_levels", JSON.stringify(list));
+      if (typeof UISearch !== "undefined") UISearch.render();
+    }
   },
 
   /* 顶栏选择器锁定/同步（T35）：地图战斗时 波次/难度/等级/守密人 锁定，
@@ -1790,73 +1837,7 @@ const Collector = {
       State.battle.enemies = [];
       State.battle.aiIndex = {};
       for (const en of batch) {
-        const hp = parseFloat(en.hp) || 100;
-        const actions = (en.intentRows || []).map((r, ri) => {
-          const a = this.parseIntentAction(r); a._rowIdx = ri; a.once = !!r.once;
-          if (r.cond) a.cond = String(r.cond).trim();   // T34 条件边
-          if (r.wait) a.wait = true;
-          const gr = parseInt(r.goto, 10);
-          if (Number.isFinite(gr) && gr >= 1) a._gotoRow = gr;   // 1-based 行号，组重映射后写回
-          return a;
-        });
-        /* 等价意图：intentRows[i].t === "等价" → 第 i+1 条并入第 i 条（循环中同一位置随机其一） */
-        const groups = [];
-        for (let ri = 0; ri < actions.length; ri++) {
-          const prevRow = ri > 0 ? en.intentRows[ri - 1] : null;
-          if (prevRow && prevRow.t === "等价" && groups.length) groups[groups.length - 1].push(actions[ri]);
-          else groups.push([actions[ri]]);
-        }
-        /* 组属性聚合：once=任一成员仅一次；记录旧行索引→新索引映射（转阶段 start 重算用） */
-        groups.forEach(g => { g.once = g.some(x => x.once); });
-        groups.sort((a, b) => (b.once ? 1 : 0) - (a.once ? 1 : 0));   // 仅一次组前置
-        const newIdxOfRow = {};
-        groups.forEach((g, gi) => g.forEach(x => { if (x._rowIdx != null) newIdxOfRow[x._rowIdx] = gi; }));
-        /* T34：条件边属于组（引擎读 acts[idx].cond）；成员的边上提包装 */
-        for (const g of groups) {
-          const src = g.find(x => x.cond || x.wait || x._gotoRow != null);
-          if (src) { g.cond = src.cond; g.wait = src.wait; g._gotoRow = src._gotoRow; }
-        }
-        const actionsMerged = groups.map(g => g.length === 1 ? g[0]
-          : { name: g.map(x => x.name).join("／"), either: g, type: g[0].type, note: "等价意图（随机其一）",
-              ...(g.cond ? { cond: g.cond } : {}), ...(g.wait ? { wait: true } : {}), ...(g._gotoRow != null ? { _gotoRow: g._gotoRow } : {}) });
-        /* T34：goto 行号→等价组新行号（1-based 保持）；无效目标=0（引擎视为无跳转）；清理内部字段 */
-        for (const a of actionsMerged) {
-          if (a._gotoRow != null) {
-            const t = newIdxOfRow[a._gotoRow - 1];
-            a.goto = (t != null && t + 1 !== actionsMerged.indexOf(a)) ? t + 1 : 0;
-          }
-          delete a._gotoRow; delete a._rowIdx;
-          for (const x of (a.either || [])) { delete x._gotoRow; delete x._rowIdx; delete x.cond; delete x.wait; delete x.once; }
-        }
-        const loopStart = groups.reduce((s, g, gi) => g.once ? s + g.length : s, 0);   // 一次性段长度
-        const mainDmg = actionsMerged.find(a => a.type === "attack" && a.value != null);
-        const stages = Array.isArray(en.stages) ? en.stages : [];
-        const def = {
-          id: "mapfight_" + en.no, name: en.name + (en.lv ? ` Lv${en.lv}` : ""), tier: "normal",
-          hp: { normal: hp }, attack: { normal: mainDmg ? mainDmg.value : Math.round(hp / 30) },
-          actions: actionsMerged, loopStart,
-          phases: stages.length ? stages.map(s => {
-            const ph = { hp: parseFloat(s.hp) || hp, start: newIdxOfRow[s.at] ?? s.at };   // 第2+管：血量与意图起点（once 前置后重算）
-            /* T34 补：转阶段状态「免疫伤害×1；力量×9」——按名称或 buff_id 解析（×层数可省=1），未知名称跳过 */
-            const txt = String(s.buff || "").trim();
-            if (txt) {
-              const buffs = txt.split("；").join(";").split(";").map(t => t.trim()).filter(Boolean).map(t => {
-                const parts = t.split("×").join("*").split("*");
-                const nm = (parts[0] || "").trim();
-                const st2 = parseInt(parts[1], 10) || 1;
-                if (!nm) return null;
-                const def = (window.DBF.buffs || []).find(x => x.id === nm || x.name === nm);
-                return def ? { buffId: def.id, stacks: st2 } : null;
-              }).filter(Boolean);
-              if (buffs.length) ph.buffs = buffs;
-            }
-            return ph;
-          }) : null,
-          passives: en.statusTiming ? [en.statusTiming] : [],
-          source: "「怪物·战斗」采集记录 #" + en.no
-        };
-        const u = { uid: State.nextUid("enemy"), side: "enemy", def, hp, maxHp: hp, phaseIdx: 0, loopStart: loopStart || 0,
-          attack: def.attack.normal, defense: 0, shield: 0, guku: 0, gukuMax: 100, tentacles: 0, buffs: [] };
+        const u = this._buildEnemyUnit(en);
         State.battle.enemies.push(u);
         State.battle.aiIndex[u.uid] = 0;
       }
@@ -1868,6 +1849,118 @@ const Collector = {
     /* 战斗结果监视：胜→标记 done（Boss=探索胜利）；败→失败弹窗（是否结束游戏） */
     this.monitorMapFight(cell);
     this.saveMap(); this.renderMap();
+  },
+
+  /* 采集批次条目 → 战斗单位（enterMapFight / addLevelToBattle 共用；T35 抽取，逻辑不变） */
+  _buildEnemyUnit(en) {
+    const hp = parseFloat(en.hp) || 100;
+    const actions = (en.intentRows || []).map((r, ri) => {
+      const a = this.parseIntentAction(r); a._rowIdx = ri; a.once = !!r.once;
+      if (r.cond) a.cond = String(r.cond).trim();   // T34 条件边
+      if (r.wait) a.wait = true;
+      const gr = parseInt(r.goto, 10);
+      if (Number.isFinite(gr) && gr >= 1) a._gotoRow = gr;   // 1-based 行号，组重映射后写回
+      return a;
+    });
+    /* 等价意图：intentRows[i].t === "等价" → 第 i+1 条并入第 i 条（循环中同一位置随机其一） */
+    const groups = [];
+    for (let ri = 0; ri < actions.length; ri++) {
+      const prevRow = ri > 0 ? en.intentRows[ri - 1] : null;
+      if (prevRow && prevRow.t === "等价" && groups.length) groups[groups.length - 1].push(actions[ri]);
+      else groups.push([actions[ri]]);
+    }
+    /* 组属性聚合：once=任一成员仅一次；记录旧行索引→新索引映射（转阶段 start 重算用） */
+    groups.forEach(g => { g.once = g.some(x => x.once); });
+    groups.sort((a, b) => (b.once ? 1 : 0) - (a.once ? 1 : 0));   // 仅一次组前置
+    const newIdxOfRow = {};
+    groups.forEach((g, gi) => g.forEach(x => { if (x._rowIdx != null) newIdxOfRow[x._rowIdx] = gi; }));
+    /* T34：条件边属于组（引擎读 acts[idx].cond）；成员的边上提包装 */
+    for (const g of groups) {
+      const src = g.find(x => x.cond || x.wait || x._gotoRow != null);
+      if (src) { g.cond = src.cond; g.wait = src.wait; g._gotoRow = src._gotoRow; }
+    }
+    const actionsMerged = groups.map(g => g.length === 1 ? g[0]
+      : { name: g.map(x => x.name).join("／"), either: g, type: g[0].type, note: "等价意图（随机其一）",
+          ...(g.cond ? { cond: g.cond } : {}), ...(g.wait ? { wait: true } : {}), ...(g._gotoRow != null ? { _gotoRow: g._gotoRow } : {}) });
+    /* T34：goto 行号→等价组新行号（1-based 保持）；无效目标=0（引擎视为无跳转）；清理内部字段 */
+    for (const a of actionsMerged) {
+      if (a._gotoRow != null) {
+        const t = newIdxOfRow[a._gotoRow - 1];
+        a.goto = (t != null && t + 1 !== actionsMerged.indexOf(a)) ? t + 1 : 0;
+      }
+      delete a._gotoRow; delete a._rowIdx;
+      for (const x of (a.either || [])) { delete x._gotoRow; delete x._rowIdx; delete x.cond; delete x.wait; delete x.once; }
+    }
+    const loopStart = groups.reduce((s, g, gi) => g.once ? s + g.length : s, 0);   // 一次性段长度
+    const mainDmg = actionsMerged.find(a => a.type === "attack" && a.value != null);
+    const stages = Array.isArray(en.stages) ? en.stages : [];
+    const def = {
+      id: "mapfight_" + en.no, name: en.name + (en.lv ? ` Lv${en.lv}` : ""), tier: "normal",
+      hp: { normal: hp }, attack: { normal: mainDmg ? mainDmg.value : Math.round(hp / 30) },
+      actions: actionsMerged, loopStart,
+      phases: stages.length ? stages.map(s => {
+        const ph = { hp: parseFloat(s.hp) || hp, start: newIdxOfRow[s.at] ?? s.at };   // 第2+管：血量与意图起点（once 前置后重算）
+        /* T34 补：转阶段状态「免疫伤害×1；力量×9」——按名称或 buff_id 解析（×层数可省=1），未知名称跳过 */
+        const txt = String(s.buff || "").trim();
+        if (txt) {
+          const buffs = txt.split("；").join(";").split(";").map(t => t.trim()).filter(Boolean).map(t => {
+            const parts = t.split("×").join("*").split("*");
+            const nm = (parts[0] || "").trim();
+            const st2 = parseInt(parts[1], 10) || 1;
+            if (!nm) return null;
+            const def = (window.DBF.buffs || []).find(x => x.id === nm || x.name === nm);
+            return def ? { buffId: def.id, stacks: st2 } : null;
+          }).filter(Boolean);
+          if (buffs.length) ph.buffs = buffs;
+        }
+        return ph;
+      }) : null,
+      passives: en.statusTiming ? [en.statusTiming] : [],
+      source: "「怪物·战斗」采集记录 #" + en.no
+    };
+    return { uid: State.nextUid("enemy"), side: "enemy", def, hp, maxHp: hp, phaseIdx: 0, loopStart: loopStart || 0,
+      attack: def.attack.normal, defense: 0, shield: 0, guku: 0, gukuMax: 100, tentacles: 0, buffs: [] };
+  },
+
+  /* 关卡直接加入战斗（T35 补，用户 10-02：加关卡或加怪物都能开始战斗）：
+   * 把关卡在当前难度的战斗构建进敌方面板（prep 阶段），「开始战斗」即打，无需走地图 */
+  addLevelToBattle(i) {
+    const it = this.levelLib()[i];
+    if (!it || !it.level) { this.setStatus("关卡库中没有这一项"); return; }
+    if (typeof State === "undefined") return;
+    if (!State.battle) State.newBattle();
+    if (!["prep", "over"].includes(State.battle.phase)) { this.setStatus("战斗进行中——先结束本场再加入关卡"); return; }
+    /* 上一场已结束：软重开保留队伍（同 enterMapFight 口径） */
+    if (State.battle.phase === "over") {
+      const team = State.battle.allies.map(a => ({ id: a.def.id, level: a.level }));
+      State.newBattle();
+      for (const m of team) { try { State.addAlly(m.id, m.level); } catch (e) {} }
+    }
+    /* 难度=顶栏选择器（与「新一把难度=选择器」同口径），缺该难度档回落关卡第一条 */
+    const sel = document.getElementById("difficulty-select");
+    if (sel && sel.value) State.battle.difficulty = sel.value;
+    const cur = this.normalizeDiff(State.battle.difficulty);
+    const battles = Array.isArray(it.level.battles) ? it.level.battles.filter(x => x && x.fields && Array.isArray(x.fields.batch)) : [];
+    const rec = battles.find(x => this.normalizeDiff(x.fields.diff) === cur) || battles[0];
+    if (!rec) { this.setStatus("关卡里没有可加入的战斗记录"); return; }
+    State.battle.enemies = [];
+    State.battle.aiIndex = {};
+    for (const en of rec.fields.batch) {
+      const u = this._buildEnemyUnit(en);
+      State.battle.enemies.push(u);
+      State.battle.aiIndex[u.uid] = 0;
+    }
+    const dN = this.normalizeDiff(rec.fields.diff);
+    const diffMap = { n1: "normal", n2: "hard", n3: "nightmare", n4: "insane", n5: "n5", n6: "n6", n7: "n7" };
+    State.battle.difficulty = diffMap[dN] || State.battle.difficulty;
+    /* 选择器/等级显示同步到本场难度（不锁定——自由战斗） */
+    if (sel && [...sel.options].some(o => o.value === State.battle.difficulty)) sel.value = State.battle.difficulty;
+    if (State.autoLevel) {
+      const lv = document.getElementById("level-input");
+      if (lv) { lv.value = State.autoLevel(1, State.battle.difficulty); State.battle.level = parseInt(lv.value, 10) || State.battle.level; }
+    }
+    this.setStatus(`已加入关卡战斗「${it.name}」（${dN}，${rec.fields.batch.length} 只）——点「开始战斗」开打`);
+    State.notify();
   },
 
   monitorMapFight(cell) {
