@@ -51,7 +51,7 @@ const RealmSys = {
     b.hyperTurnActive = false;
     b.devourFirst = false;
     b.annihilUsed = false;
-    b.resources.furnace = State.furnaceCarry || 0;   // 熔炉跨战斗保留（猩红熔炉可用于回复生命）
+    b.team.resources.furnace = State.furnaceCarry || 0;   // 熔炉跨战斗保留（猩红熔炉可用于回复生命）
     State.furnaceCarry = 0;
   },
 
@@ -77,8 +77,8 @@ const RealmSys = {
       /* 猩红熔炉：回合开始积攒 3%maxHp（至纯×2），上限 25%maxHp */
       const pure = this.isPureFlesh();
       const fv = Math.ceil(b.team.maxHp * 0.03 * (pure ? 2 : 1));
-      b.resources.furnace = Math.min(this.maxFurnace(), (b.resources.furnace || 0) + fv);
-      Log.add(`🔥 猩红熔炉积攒 +${fv}（当前 ${b.resources.furnace}/${this.maxFurnace()}${pure ? "，至纯翻倍" : ""}）`, "good");
+      b.team.resources.furnace = Math.min(this.maxFurnace(), (b.team.resources.furnace || 0) + fv);
+      Log.add(`🔥 猩红熔炉积攒 +${fv}（当前 ${b.team.resources.furnace}/${this.maxFurnace()}${pure ? "，至纯翻倍" : ""}）`, "good");
     }
     if (this.hasHyper()) {
       /* 超维精通：0.125% × 界域精通 概率得灵感（至纯×2；>100% 多张） */
@@ -152,13 +152,22 @@ const RealmSys = {
     }
   },
 
+  /* ---------- 超维回合结束（turn.js endTurn 调用：-25% 效果仅超维回合内）---------- */
+  onTurnEnd() {
+    const b = State.battle;
+    if (b && b.hyperTurnActive) {
+      b.hyperTurnActive = false;
+      Log.add(`🌀 超维回合结束（效果恢复 100%）`, "turn");
+    }
+  },
+
   /* ---------- 熔炉回复生命（UI 按钮调用：消耗全部熔炉回复等量生命）---------- */
   furnaceHeal() {
     const b = State.battle;
     if (!b) return;
-    const v = b.resources.furnace || 0;
+    const v = b.team.resources.furnace || 0;
     if (v <= 0) { alert("猩红熔炉为空"); return; }
-    b.resources.furnace = 0;
+    b.team.resources.furnace = 0;
     Damage.heal(b.allies[0] || { side: "ally" }, v, "猩红熔炉");
     Log.add(`🔥 消耗猩红熔炉 ${v} 点回复生命`, "good");
   },
@@ -167,12 +176,12 @@ const RealmSys = {
    * 战斗结束积攒 5%maxHp + 手牌每剩 1 胚胎 5%；至纯积攒翻倍；熔炉跨战斗 carry */
   onBattleWin() {
     const b = State.battle;
-    if (!b || !this.hasFlesh()) { State.furnaceCarry = b ? (b.resources.furnace || 0) : 0; return; }
+    if (!b || !this.hasFlesh()) { State.furnaceCarry = b ? (b.team.resources.furnace || 0) : 0; return; }
     const pure = this.isPureFlesh();
     const embryoInHand = b.piles.hand.filter(c => c.defId === "shared_embryo").length;
     const gain = Math.ceil(b.team.maxHp * 0.05 * (1 + embryoInHand) * (pure ? 2 : 1));
-    b.resources.furnace = Math.min(this.maxFurnace(), (b.resources.furnace || 0) + gain);
-    State.furnaceCarry = b.resources.furnace || 0;
+    b.team.resources.furnace = Math.min(this.maxFurnace(), (b.team.resources.furnace || 0) + gain);
+    State.furnaceCarry = b.team.resources.furnace || 0;
     Log.add(`🔥 战斗结束：猩红熔炉积攒 +${gain}${embryoInHand ? `（手牌胚胎×${embryoInHand}）` : ""}${pure ? "，至纯翻倍" : ""}，携带至下一场（${State.furnaceCarry}）`, "good");
   }
 };
