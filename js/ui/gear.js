@@ -24,7 +24,7 @@ const UIGear = {
       const bare = { def: u.def, level: u.level, innerGridLv: u.innerGridLv || 0, personaLv: u.personaLv || 0,
         fatewheels: [], fwStacks: [0, 0], pacts: [], pactDetails: [null, null, null, null, null, null],
         pactSetBound: {}, spiritAdaptLv: 0 };
-      return State.computeStats(u.def, u.level + (u.innerGridLv || 0) * 2, State.collectStatMods(bare));
+      return State.computeStats(u.def, u.level + (u.innerGridLv || 0) * 2, State.collectStatMods(bare, { noRelics: true }));
     })();
     const COMBAT_KEYS = ["constitutionCombat", "attack", "defense", "critRate", "critDmg", "realmMastery", "damageBoost", "blackImprint", "deathResist", "gukuRecharge", "silverKeyCharge"];
     const NAKED_KEYS = ["constitution", "attack", "defense", "critRate", "critDmg", "realmMastery", "damageBoost", "blackImprint", "deathResist", "gukuRecharge", "silverKeyCharge"];
@@ -32,7 +32,7 @@ const UIGear = {
       <table class="mech-table"><tr><th>体质</th><th>攻击</th><th>防御</th><th>暴击率</th><th>暴击伤害</th><th>界域精通</th><th>伤害强效</th><th>黑印</th><th>死亡抵抗</th><th>狂气回充</th><th>银钥充能</th></tr>
       <tr>${COMBAT_KEYS.map(k => `<td>${u.stats[k] != null ? u.stats[k] : u.stats.constitution}</td>`).join("")}</tr>
       <tr style="color:var(--text-dim)">${NAKED_KEYS.map(k => `<td>${naked[k]}</td>`).join("")}</tr></table>
-      <div class="m-row dim">第二行=裸装对照（≈游戏「属性详情」面板：不含 命轮/密契/灵塑；灵塑实战生效、游戏面板不显示，故第一行体质/攻/防比它高）</div>`;
+      <div class="m-row dim">第二行=裸装对照（≈游戏「属性详情」面板：不含 命轮/密契/灵塑/造物；灵塑实战生效、游戏面板不显示，故第一行体质/攻/防比它高）</div>`;
 
     /* 等级 */
     const cap = State.levelCap(u);
@@ -495,8 +495,9 @@ const UIGear = {
 
   manageRelics() {
     const depths = State.researchDepths();
-    let html = `<div class="m-row dim">造物为队伍级装备（幻梦深潜等 roguelike 探索内获得）。
-      <b>造物的数值效果与禁忌学识等级挂钩</b>（物象/灵识研究深度决定其力量、护盾、回复、固定伤害类强度，缩放公式待确认）。
+    let html = `<div class="m-row dim">造物为探索内获得的全队装备。**队伍共享属性**（死亡抵抗/界域精通/伤害强效/黑印）只计入顶栏队伍属性（各角色之和之外仅一次）；
+      **个人属性键**（暴击率/暴击伤害/银钥充能——已确认集）对<b>每名</b>唤醒体个人面板生效。
+      造物的数值效果与禁忌学识等级挂钩（物象/灵识研究深度决定其力量、护盾、回复、固定伤害类强度，缩放公式待确认）。
       当前禁忌学识等级：<b>${State.tabooLevel()}</b></div>`;
     html += `<div class="m-row">`;
     for (const rid of (DBF.relicDeck || [])) {
@@ -519,6 +520,11 @@ const UIGear = {
     const i = DBF.relicDeck.indexOf(id);
     if (i >= 0) { DBF.relicDeck.splice(i, 1); Log.add(`卸下造物「${State.getRelic(id).name}」`, "sys"); }
     else { DBF.relicDeck.push(id); Log.add(`携带造物「${State.getRelic(id).name}」`, "sys"); }
+    /* 造物个人属性键（暴击率/爆伤/银充，RELIC_PERSONAL_KEYS）影响唤醒体面板——换造物后重算全队 */
+    if (State.battle) {
+      for (const a of State.battle.allies) State.recalcAllyStats(a);
+      State.syncTeamHp();
+    }
     this.renderRelicBar();
     State.notify();
     this.manageRelics();

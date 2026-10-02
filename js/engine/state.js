@@ -244,8 +244,13 @@ const State = {
     if (this.BOOST_TIER_08.includes(name)) return 0.8;
     return 0;
   },
-  collectStatMods(ally) {
-    /* 注：造物不在此处——死亡抵抗/界域精通等为队伍共享属性，只在 teamStats 计一次（2026-10-03 用户定案） */
+  /* 造物个人属性键（用户 2026-10-03 定案）：造物 statMods 里这些键对**每名**唤醒体个人面板生效；
+   * 死亡抵抗/界域精通/伤害强效/黑印等队伍共享键不在此列，只进 teamStats。后续实测确认新键就往里加 */
+  RELIC_PERSONAL_KEYS: ["critRate", "critDmg", "silverKeyCharge"],
+
+  collectStatMods(ally, opts = {}) {
+    /* 注：造物的队伍共享属性（死亡抵抗/界域精通等）不在此处，只在 teamStats 计一次；
+     * 个人属性键（暴击率/爆伤/银充，RELIC_PERSONAL_KEYS）在下方造物段处理（2026-10-03 用户定案） */
     const mods = [];
     (ally.fatewheels || []).forEach((fwId, slot) => {
       const fw = this.getFw(fwId);
@@ -326,6 +331,17 @@ const State = {
     if (ad > 0) {
       const per = DBF.spiritAdaptPerLv || { hpPct: 3, attackPct: 3, defensePct: 3 };
       mods.push({ from: `灵塑适性 Lv${ad}（面板不显示、实战生效）`, hpPct: per.hpPct * ad, attackPct: per.attackPct * ad, defensePct: per.defensePct * ad });
+    }
+    /* 造物个人属性键：暴击率/爆伤/银充对每名唤醒体生效（平坦加成，进 flat 汇总）；
+     * noRelics=true 供裸装对照行用（裸装=无装备口径） */
+    if (!opts.noRelics) {
+      for (const rid of (DBF.relicDeck || [])) {
+        const r = this.getRelic(rid);
+        if (!r || !r.statMods) continue;
+        const personal = {};
+        for (const k of this.RELIC_PERSONAL_KEYS) if (r.statMods[k]) personal[k] = r.statMods[k];
+        if (Object.keys(personal).length) mods.push({ from: `造物·${r.name}`, ...personal });
+      }
     }
     /* 内在灵格已并入基础值计算（effLevel = 等级 + 2×灵格级），不再作为百分比修正 */
     return mods;

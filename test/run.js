@@ -219,6 +219,28 @@ function runAllTests() {
     relicOwner4.stats.damageBoost === before4.db);
   DBF.relicDeck = DBF.relicDeck.filter(x => x !== "relic_tmp_team4");
   DBF.relics.splice(DBF.relics.findIndex(r => r.id === "relic_tmp_team4"), 1);
+  /* 造物个人属性键（用户 2026-10-03 定案）：暴击率/暴击伤害/银钥充能吃造物，对每名成员生效；队伍共享键不进个人 */
+  const pA = State.battle && State.battle.allies[0], pB = State.battle && State.battle.allies[1];
+  if (pA) {
+    const bA = { cr: pA.stats.critRate, cd: pA.stats.critDmg, sk: pA.stats.silverKeyCharge, rm: pA.stats.realmMastery };
+    const bB = pB ? { cr: pB.stats.critRate } : null;
+    DBF.relics.push({ id: "relic_tmp_pers4", name: "临时·个人属性测试", statMods: { critRate: 5, critDmg: 30, silverKeyCharge: 10, realmMastery: 6 } });
+    DBF.relicDeck.push("relic_tmp_pers4");
+    State.recalcAllyStats(pA);
+    if (pB) State.recalcAllyStats(pB);
+    check("造物个人键进个人面板(暴击+5/爆伤+30/银充+10)",
+      pA.stats.critRate === bA.cr + 5 && pA.stats.critDmg === bA.cd + 30 && pA.stats.silverKeyCharge === bA.sk + 10,
+      `实际:${pA.stats.critRate}/${pA.stats.critDmg}/${pA.stats.silverKeyCharge} 基线:${bA.cr}/${bA.cd}/${bA.sk}`);
+    check("造物队伍共享键不进个人（界域不变+noRelics 排除造物 mods）",
+      pA.stats.realmMastery === bA.rm
+      && State.collectStatMods(pA).some(m => (m.from || "").startsWith("造物·"))
+      && !State.collectStatMods(pA, { noRelics: true }).some(m => (m.from || "").startsWith("造物·")));
+    if (pB) check("造物个人键对每名成员生效（成员二暴击同样+5）", pB.stats.critRate === bB.cr + 5, "实际:" + pB.stats.critRate);
+    DBF.relicDeck = DBF.relicDeck.filter(x => x !== "relic_tmp_pers4");
+    DBF.relics.splice(DBF.relics.findIndex(r => r.id === "relic_tmp_pers4"), 1);
+    State.recalcAllyStats(pA);
+    if (pB) State.recalcAllyStats(pB);
+  }
   /* T32（2026-10-02）：旧 cardLvMult ×1.02/级 系对「每级+2%」的误读已移除，
    * 基础牌等级成长=倍率成长 scalePerLv 0.02/级（灰机 56 角色全量核验），断言移至 6.5 节 T32 块 */
 
@@ -1374,7 +1396,7 @@ function runAllTests() {
     const bare = { def: doll.def, level: 70, innerGridLv: 1, personaLv: 12,
       fatewheels: [], fwStacks: [0, 0], pacts: [], pactDetails: [null, null, null, null, null, null],
       pactSetBound: {}, spiritAdaptLv: 0 };
-    const naked = State.computeStats(doll.def, 72, State.collectStatMods(bare));
+    const naked = State.computeStats(doll.def, 72, State.collectStatMods(bare, { noRelics: true }));
     check("属性对账 裸装对照三维=游戏面板 102/83/111",
       naked.constitution === 102 && naked.attack === 83 && naked.defense === 111,
       `实际:${naked.constitution}/${naked.attack}/${naked.defense}`);

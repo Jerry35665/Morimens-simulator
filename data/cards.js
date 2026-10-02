@@ -47,12 +47,12 @@ window.DBF.cards = [
   },
   {
     id: "card_doll_rain",
-    name: "灵肉雨分", owner: "char_doll", cost: 1, type: "防御", target: "self", exhaust: false,
+    name: "灵肉两分", owner: "char_doll", cost: 1, type: "灵知觉醒", target: "self", exhaust: false, retain: true,
     text: "朵尔获得25点狂气（每级+5）。灵知觉醒：朵尔造成回复时，获得[防御力*15%]点护盾（每级+3%）。保留。",
     effects: [ { op: "guku", value: 25, perLv: 5 } ],
     upgrade: null, terms: [], generated: false,
     source: "游戏内截图(Kuyo群 2026-09)",
-    notes: "护盾=防御力×(15%+3%×(等级-1))；灵知觉醒触发未自动结算"
+    notes: "T37 觉醒批（2026-10-02）：更名灵肉雨分→灵肉两分（wiki 名）+type 防御→灵知觉醒+保留（原缺）；护盾=防御力×(15%+3%×(等级-1))；灵知觉醒触发未自动结算"
   },
   {
     id: "card_doll_surgery",
@@ -147,7 +147,7 @@ window.DBF.cards = [
   },
   {
     id: "card_rotan_hunger",
-    name: "战欲难平", owner: "char_rotan", cost: 1, type: "权柄", target: "self", exhaust: false,
+    name: "战欲难平", owner: "char_rotan", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
     text: "萝坦获得25点狂气。灵知觉醒：萝坦的伤害次数提高1次。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false,
@@ -197,7 +197,7 @@ window.DBF.cards = [
   },
   {
     id: "card_ramona_philosophy",
-    name: "第一哲学", owner: "char_ramona", cost: 3, type: "权柄", target: "self", exhaust: false,
+    name: "第一哲学", owner: "char_ramona", cost: 3, type: "灵知觉醒", target: "self", exhaust: false,
     text: "拉蒙娜获得25点狂气。灵知觉醒：打出卡牌后获得1点算力，每回合最多3次。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false,
@@ -239,7 +239,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。阿格里帕获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_agrippa_journey", name: "迷途之旅", owner: "char_agrippa", cost: 1, type: "权柄", target: "self", exhaust: false,
+  { id: "card_agrippa_journey", name: "迷途之旅", owner: "char_agrippa", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
     text: "阿格里帕获得25点狂气。灵知觉醒：阿格里帕施加的中毒提高50%。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "中毒强化未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
@@ -265,7 +265,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。图鲁获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_tulu_majesty", name: "不朽威仪", owner: "char_tulu", cost: 3, type: "权柄", target: "self", exhaust: false,
+  { id: "card_tulu_majesty", name: "不朽威仪", owner: "char_tulu", cost: 3, type: "灵知觉醒", target: "self", exhaust: false,
     text: "触腕伤害 攻击力*1.4%。图鲁获得25点狂气。灵知觉醒：图鲁每消耗1点算力，触腕伤害+1。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "触腕伤害成长未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
@@ -291,7 +291,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。莉兹获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 莉兹角色页(606755)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_liz_jade", name: "翡翠映像", owner: "char_liz", cost: 1, type: "权柄", target: "self", exhaust: false,
+  { id: "card_liz_jade", name: "翡翠映像", owner: "char_liz", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
     text: "莉兹获得25点狂气。灵知觉醒：莉兹每造成3次伤害，便将1张具有消耗的「绿炎」置入手牌，每回合最多触发3次。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 莉兹角色页(606755)", notes: "生成绿炎未自动结算" },
@@ -325,7 +325,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。卡茜亚获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "基础牌口径修正 2026-10-02（T32）：平值3→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_kasia_prelude", name: "演出序幕", owner: "char_kasia", cost: 2, type: "权柄", target: "self", exhaust: false,
+  { id: "card_kasia_prelude", name: "演出序幕", owner: "char_kasia", cost: 2, type: "灵知觉醒", target: "self", exhaust: false,
     text: "力量 攻击力*8%。卡茜亚获得25点狂气。灵知觉醒：卡茜亚每打出1张卡牌，获得3点临时力量。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: ["term_strength"], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "灵知觉醒回力量未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
@@ -351,7 +351,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。詹金获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "基础牌口径修正 2026-10-02（T32）：平值3→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_jenkin_fold", name: "空间折叠", owner: "char_jenkin", cost: 2, type: "权柄", target: "self", exhaust: false,
+  { id: "card_jenkin_fold", name: "空间折叠", owner: "char_jenkin", cost: 2, type: "灵知觉醒", target: "self", exhaust: false,
     text: "詹金获得25点狂气。灵知觉醒：暴击率提高25%，詹金每造成1次伤害，在本回合中暴击伤害便提高15%，每回合最多叠加5次。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "暴击成长未自动结算" },
@@ -377,7 +377,7 @@ window.DBF.cards = [
     text: "获得[防御力*10%]点护盾。达芙黛尔获得5点狂气。",
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
-  { id: "card_dafdel_thirst", name: "渴血者", owner: "char_dafdel", cost: 1, type: "权柄", target: "self", exhaust: false,
+  { id: "card_dafdel_thirst", name: "渴血者", owner: "char_dafdel", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
     text: "达芙黛尔获得25点狂气。灵知觉醒：每有1张达芙黛尔的牌进入超维空间后，获得1点算力，抽1张牌，每回合最多触发2次。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "超维空间联动未自动结算" },
@@ -394,6 +394,13 @@ window.DBF.cards = [
     effects: [ { op: "damage", scaleAttack: 0.5, allEnemies: true, times: 1, scalePerLv: 0.1 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "「千面幻象」自定义生成卡未建卡；V1.5.1:千面幻象获保留、超限爆发「幻雾迷烟」额外置入2张复制；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：创造 1 张自定义的「千面幻象」将其置入手牌，若" },
 
+
+  {
+    id: "card_dafdel_projection",
+    name: "维度投射", owner: "char_dafdel", cost: 3, type: "灵知觉醒", target: "self", exhaust: false, retain: true,
+    text: "达芙黛尔获得25点狂气。灵知觉醒：每有 1 张达芙黛尔的牌进入超维空间后，将 1 张「灵感」置入手中，每回合最多触发 2 次。保留。",
+    effects: [ { op: "guku", value: 25, perLv: 5 } ],
+    upgrade: null, terms: [], generated: false, source: "灰机wiki 逐级（T37 觉醒批 2026-10-02 建卡）", notes: "T37 觉醒批：狂气 25+5/级；灵知觉醒触发（超维空间→灵感置手）未建模" },
   /* ===== 通用/状态牌（非唤醒体牌，左侧面板可生成；数值只随目标/施放者属性结算） ===== */
   { id: "shared_inspire", name: "灵感", owner: "shared", cost: 0, type: "权柄", target: "none", exhaust: true,
     text: "获得 1 点算力，抽 1 张牌。保留。消耗。（游戏内卡面实测 2026-09-23）",

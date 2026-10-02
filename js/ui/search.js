@@ -90,7 +90,7 @@ const UISearch = {
           <span class="add-btn" onclick="Collector.playLevel(${i})">开打</span>
           <div class="si-name">🗺 ${it.name}</div>
           <div class="si-meta">${it.diff || "难度混合"} · ${it.cells ?? "?"} 格 · ${it.battleCount || 0} 场战斗</div>
-          <div class="si-meta dim">${it.savedAt || ""} · 开打=到出生点走格子开战 · 载入图=只并入地图 · 删除=移出关卡库</div>
+          <div class="si-meta dim">${it.savedAt || ""} · 开打=只换战斗不动你的地图 · 载入图=并入关卡地图 · 删除=移出关卡库</div>
         </div>`);
       });
     }

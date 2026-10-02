@@ -1286,10 +1286,9 @@ const Collector = {
     this.saveLevelToLib(m);   // 粘贴过的关卡自动入库，之后搜索面板直接选择
   },
 
-  /* 关卡 JSON → 应用（确认+关卡地图并入当前地图+同号战斗替换）；供 importLevel/关卡库载入共用 */
+  /* 关卡 JSON → 应用（确认+关卡地图并入当前地图+同号战斗替换）；供 importLevel/关卡库「载入图」共用 */
   _applyLevel(m) {
-    const battles = (Array.isArray(m.battles) ? m.battles : []).filter(b =>
-      b && b.fields && Array.isArray(b.fields.batch) && b.fields.fno).slice(0, 200);
+    const battles = this._validBattles(m);
     const diffs = [...new Set(battles.map(b => this.normalizeDiff(b.fields.diff)).filter(Boolean))];
     const cellsIncoming = Object.keys((m.map && m.map.cells) || {}).length;
     const curCells = (this.mapCells && this.mapCells.cells) || {};
@@ -1297,13 +1296,21 @@ const Collector = {
     if (!this._confirm(`载入关卡「${m.name || "未命名"}」？\n\n· 关卡地图 ${cellsIncoming} 格并入当前地图（共 ${cellsTotal} 格，同位覆盖）\n· 以关卡内版本替换 ${battles.length} 场同号战斗${diffs.length ? `\n· 难度：${diffs.join("/")}` : ""}`)) return false;
     const n = this._applyMapJson(m.map || {}, true);
     if (!n) { this.setStatus("关卡地图没有有效格子"); return false; }
+    this._replaceBattles(battles);
+    this.setStatus(`已载入关卡「${m.name || "未命名"}」：${n} 格 + ${battles.length} 场战斗${diffs.length ? `（${diffs.join("/")}）` : ""}`);
+    return true;
+  },
+  _validBattles(m) {
+    return (Array.isArray(m.battles) ? m.battles : []).filter(b =>
+      b && b.fields && Array.isArray(b.fields.batch) && b.fields.fno).slice(0, 200);
+  },
+  /* 关卡战斗记录落地：以关卡内版本替换同 fno 记录（其余记录不动） */
+  _replaceBattles(battles) {
     const nos = new Set(battles.map(b => String(b.fields.fno)));
     const list = this._load().filter(e => !(e.cat === "monster" && nos.has(String((e.fields && e.fields.fno) || ""))));
     for (const b of battles) list.push({ time: b.time || "关卡导入", cat: "monster", catLabel: "怪物·战斗", icon: "👹", fields: b.fields });
     this._save(list);
     this.renderList();
-    this.setStatus(`已载入关卡「${m.name || "未命名"}」：${n} 格 + ${battles.length} 场战斗${diffs.length ? `（${diffs.join("/")}）` : ""}`);
-    return true;
   },
   _confirm(msg) { return this.isOpen() ? this.win.confirm(msg) : window.confirm(msg); },
 
@@ -1922,17 +1929,21 @@ const Collector = {
       attack: def.attack.normal, defense: 0, shield: 0, guku: 0, gukuMax: 100, tentacles: 0, buffs: [] };
   },
 
-  /* 关卡开打（T35 补，用户 10-03 定稿：不直接进战斗）——
-   * 载入关卡（地图并入+同号记录替换）→ 切使用模式落到出生点 → 走到战斗格 enterMapFight 开打 */
+  /* 关卡开打（T35 补，用户 10-03 定稿：地图按用户自己记的来）——
+   * 只把关卡的战斗记录落地（同号替换），**不动用户的地图**：事件/商店/遗物/黑印格照常触发；
+   * 切使用模式落自己地图的出生点，走到自己记的战斗格（编号=关卡战斗号）自动加载 */
   playLevel(i) {
     const it = this.levelLib()[i];
     if (!it || !it.level) { this.setStatus("关卡库中没有这一项"); return; }
-    if (!this._applyLevel(it.level)) return;
+    const battles = this._validBattles(it.level).slice(0, 200);
+    if (!battles.length) { this.setStatus("关卡里没有战斗记录"); return; }
+    const diffs = [...new Set(battles.map(b => this.normalizeDiff(b.fields.diff)).filter(Boolean))];
+    if (!this._confirm(`开打关卡「${it.name || "未命名"}」？\n\n· 以关卡内版本替换 ${battles.length} 场同号战斗（地图保持你自己记的，不动）${diffs.length ? `\n· 难度：${diffs.join("/")}` : ""}\n· 走到你地图上对应编号的战斗格即开打`)) return;
+    this._replaceBattles(battles);
     this.mapMode = "use";
     if (this.isOpen()) {
-      this.setMapMode("use");   /* 面板开着=完整「新一把」：清进度/难度=选择器/落出生点 */
+      this.setMapMode("use");   /* 面板开着=完整「新一把」：清进度/难度=选择器/落你自己地图的出生点 */
     } else {
-      /* 面板没开：手动完成落点与难度同步（新一把语义），存档待面板打开 */
       this.mapPos = this.findSpawnKey();
       if (typeof State !== "undefined" && State.battle && !["play", "enemy"].includes(State.battle.phase)) {
         const sel = document.getElementById("difficulty-select");
@@ -1940,7 +1951,7 @@ const Collector = {
       }
       this.saveMap();
     }
-    this.setStatus(`关卡「${it.name}」已就位（${it.diff || "多难度"}）——已在出生点，走进战斗格即开打`);
+    this.setStatus(`关卡「${it.name}」已就位——地图是你自己记的：走到对应编号战斗格开打，事件/商店照常`);
     if (typeof UISearch !== "undefined") UISearch.render();
   },
 
