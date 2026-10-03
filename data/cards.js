@@ -67,6 +67,18 @@ window.DBF.cards = [
     notes: "✅2026-10-03 三次校准定案（Wiki 基数 15）：回复=体质×(15%+3%×(等级-1))×1.33(启灵①)→取整→×(1+狂充×0.5%)(灵知解构)。链路：pct 30×1.33=39.9 → 卡面 ceil(面板102×39.9%)=41→×1.072=44、实战 ceil(实战133×39.9%)=54→×1.072=58（灵塑实战生效，58=卡面×1.3）；启灵1虚弱 1→2 层已接"
   },
   {
+    id: "card_doll_exchange",
+    name: "等价交换", owner: "char_doll", cost: 3, type: "权柄", target: "self", exhaust: false,
+    text: "回复[体质*25%]点（启灵2：[体质*30%]点）生命。弃掉所有手牌，每弃掉1张牌便额外回复[体质*5%]点（启灵2：[体质*6%]点）生命。（启灵2：并获得等量护盾。）",
+    effects: [
+      { op: "heal", value: 0, pctConstitution: 25, perLv: 5, target: "self" },
+      { op: "discardHeal", pctConstitution: 5, perLv: 1 }
+    ],
+    upgrade: null, terms: [], generated: false,
+    source: "灰机wiki 朵尔页 技能2（左）（wiki.js 2026-09-23 快照）",
+    notes: "✅T39 朵尔缺牌批（2026-10-03）：此前未建卡导致 buildDeck wiki 映射漏卡（朵尔只贡献 3 张）。弃掉所有手牌（不含本卡）+每弃1张额外回复=新 op discardHeal（按总 additions 一次 ceil，粒度待锚点）；治疗段吃灵知解构天赋（healUpPerGuku），弃牌段暂不吃；启灵2（30%/6%/等量护盾）未建模；wiki 逐级 25/30/35/40/45/50 与 5/6/7/8/9/10 全吻合"
+  },
+  {
     id: "card_doll_awaken",
     name: "理性，真理与现实", owner: "char_doll", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
     text: "狂气爆发：驱散自身易伤状态。回复10点生命，其他唤醒体获得5点狂气。",
@@ -100,7 +112,7 @@ window.DBF.cards = [
   {
     id: "card_ogilvy_zeal",
     name: "骑士热诚", owner: "char_ogilvy", cost: 2, type: "灵知觉醒", target: "self", exhaust: false, retain: true,
-    text: "力量 攻击力*3.75%。奥吉尔获得25点狂气。灵知觉醒：获得2点力量，奥吉尔打出卡牌后获得1点力量。",
+    text: "获得[攻击力*3.75%]点力量，奥吉尔打出卡牌后，获得[攻击力*1.5%]点力量。保留。",
     effects: [ { op: "guku", value: 25, perLv: 5 } ],
     upgrade: null, terms: ["term_strength"], generated: false,
     source: "gamekee 奥吉尔角色页", notes: "攻31×3.75%≈1.16，框架取1点力量；T37 追加批：槽位纠正（游戏为灵知觉醒卡，原误标权柄）；狂气 25+5/级；灵知觉醒触发段（力量攻3.75%/1.5%）未建模"
@@ -108,7 +120,7 @@ window.DBF.cards = [
   {
     id: "card_ogilvy_spear",
     name: "穿刺之枪", owner: "char_ogilvy", cost: 2, type: "攻击", target: "enemy", exhaust: false,
-    text: "造成[攻击力*25%]点穿刺伤害并施加1回合易伤。享受3倍力量加成。",
+    text: "造成[攻击力*25%]点（启灵1：[攻击力*50%]点）穿刺伤害，施加1回合（启灵1：2回合）易伤，享受3倍力量加成。",
     effects: [ { op: "damage", scaleAttack: 0.25, scalePerLv: 0.05 }, { op: "buff", buffId: "debuff_vul", stacks: 1, duration: 1, target: "enemy" } ],
     upgrade: null, terms: ["term_vul"], generated: false,
     source: "gamekee 奥吉尔角色页", notes: "启灵：易伤回合数+1；对护盾目标双倍伤害（未自动结算）；T37 追加批：攻×(25+5/级)%灰机逐级重建（原平值8）；易伤=仅被打到的目标（用户 2026-10-02 定案，单体施加不扩散）；穿刺伤害/3倍力量加成/启灵双倍伤害 未建模"
@@ -116,13 +128,13 @@ window.DBF.cards = [
   {
     id: "card_ogilvy_barrier",
     name: "不定壁垒", owner: "char_ogilvy", cost: "X", type: "技能", target: "self", exhaust: false,
-    text: "获得[防御力*7%]点护盾 X+1 次，每消耗 1 点算力，获得 5 点狂气。",
+    text: "获得[防御力*7%]点（启灵3：[防御力*12%]点）护盾X+1次，每消耗1点算力，获得5点狂气。（启灵3：获得[攻击力*4%]点力量。）",
     effects: [ { op: "block", scaleDefense: 0.07, scalePerLv: 0.014, timesXSpend: true }, { op: "guku", perSpend: 5 } ],
     upgrade: null, terms: [], generated: false, source: "灰机wiki 逐级（T32 追加批 2026-10-02 建卡）", notes: "T37 追加批：X 费实耗全算力；护盾次数=实耗+1（timesXSpend）、狂气=5×实耗（perSpend）已实装；启灵3 力量攻4→8%/护盾12→20% 未建模" },
   {
     id: "card_ogilvy_awaken",
     name: "七艺，传承美德", owner: "char_ogilvy", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
-    text: "狂气爆发：驱散自身脆弱状态。获得12点护盾。在本回合中获得5点力量。",
+    text: "驱散自身脆弱状态，（启灵2：并额外获得[防御力*12%]点护盾。）获得[防御力*30%]点（启灵2：[防御力*36%]点）护盾。获得[攻击力*15%]点（启灵2：[攻击力*18%]点）力量。",
     effects: [ { op: "dispel", kind: "debuff", target: "self" }, { op: "block", scaleDefense: 0.3, scalePerLv: 0.06 }, { op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 15, perLv: 3 }, stacks: 1, duration: 1, target: "self" } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 奥吉尔角色页", notes: "T37 追加批：护盾防×(30+6/级)%+力量攻×(15+3/级)%层（本回合）灰机重建（原平值12盾/5点力量）；驱散简化为全减益；启灵2 附加盾 未建模"
@@ -148,7 +160,7 @@ window.DBF.cards = [
   {
     id: "card_rotan_hunger",
     name: "战欲难平", owner: "char_rotan", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "萝坦获得25点狂气。灵知觉醒：萝坦的伤害次数提高1次。",
+    text: "萝坦获得25点狂气。灵知觉醒：萝坦的伤害次数提高1次。保留。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 萝坦角色页", notes: ""
@@ -156,7 +168,7 @@ window.DBF.cards = [
   {
     id: "card_rotan_blade",
     name: "桀骜之刃", owner: "char_rotan", cost: 3, type: "攻击", target: "enemy", exhaust: false, discPerStrike: true,
-    text: "对随机1名敌人造成4点伤害，重复3次。在本回合中每打出1张「打击」算力消耗减少1点。",
+    text: "对随机1名敌人造成[攻击力*7.5%]点伤害，重复3次。在本回合中每打出1张「打击」，算力消耗减少1点。（启灵1：视为「打击」。）",
     effects: [ { op: "damage", scaleAttack: 0.075, scalePerLv: 0.015, times: 3 } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 萝坦角色页", notes: "游戏内为随机目标+变费，框架简化为指定目标固定3次、固定费用；T37 追加批：攻×(7.5+1.5/级)%×3次灰机重建（原平值4×3）；✅每打出1张打击算力-1（discPerStrike）；随机目标简化为首敌；启灵1视为打击 未建模"
@@ -164,7 +176,7 @@ window.DBF.cards = [
   {
     id: "card_rotan_wave",
     name: "恣睢之浪", owner: "char_rotan", cost: 2, type: "攻击", target: "none", exhaust: false,
-    text: "对所有敌人造成3点伤害，获得1点力量。",
+    text: "对所有敌人造成[攻击力*7.5%]点伤害，获得[攻击力*2.5%]点（启灵2：[攻击力*5%]点）力量。（启灵2：视为「打击」。）",
     effects: [ { op: "damage", scaleAttack: 0.075, scalePerLv: 0.015, allEnemies: true }, { op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 2.5, perLv: 0.5 }, stacks: 1, target: "self" } ],
     upgrade: null, terms: ["term_strength"], generated: false,
     source: "gamekee 萝坦角色页", notes: "AoE；T37 追加批：全体攻×(7.5+1.5/级)%+力量攻×(2.5+0.5/级)%层数化灰机重建（原平值3/1点力量）"
@@ -172,7 +184,7 @@ window.DBF.cards = [
   {
     id: "card_rotan_awaken",
     name: "混沌之兽", owner: "char_rotan", cost: 0, type: "狂气爆发", target: "none", exhaust: false,
-    text: "狂气爆发：驱散自身虚弱状态。对所有敌人造成14点伤害。在本场战斗中每打出1张「打击」便使伤害+3。",
+    text: "驱散自身虚弱状态。对所有敌人造成[攻击力*40%]点伤害（启灵3：2次）。在本场战斗中每打出1张「打击」便使伤害+[攻击力*8%]。（启灵3：将2张附加消耗和虚无的「打击」置入手中。）",
     effects: [ { op: "dispel", kind: "debuff", target: "self" }, { op: "damage", scaleAttack: 0.4, scalePerLv: 0.08, allEnemies: true } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 萝坦角色页", notes: "打击计数成长未自动结算，可手动调基础值；T37 追加批：全体攻×(40+8/级)%灰机重建（原平值14）；每打出1张打击伤害+攻×8% 未建模"
@@ -198,7 +210,7 @@ window.DBF.cards = [
   {
     id: "card_ramona_philosophy",
     name: "第一哲学", owner: "char_ramona", cost: 3, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "拉蒙娜获得25点狂气。灵知觉醒：打出卡牌后获得1点算力，每回合最多3次。",
+    text: "拉蒙娜获得25点狂气。灵知觉醒：拉蒙娜打出卡牌后，获得1点算力，每回合最多触发3次。保留。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 拉蒙娜角色页", notes: "灵知觉醒回算力未自动结算"
@@ -206,7 +218,7 @@ window.DBF.cards = [
   {
     id: "card_ramona_queenblade",
     name: "女王之剑", owner: "char_ramona", cost: 3, type: "攻击", target: "enemy", exhaust: false,
-    text: "造成7点伤害2次，打出后伤害次数+1，最多5次。",
+    text: "造成[攻击力*15%]点伤害3次，（启灵1：每次造成伤害获得[攻击力*2.5%]点临时力量。）打出后使「女王之剑」伤害次数+1，最多提高为5次（启灵1：最多提高为6次）。获得x点临时界域精通。（启灵1：余波：获得和打出相等的银钥能量。）",
     effects: [ { op: "damage", scaleAttack: 0.15, scalePerLv: 0.03, times: 3 } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 拉蒙娜角色页", notes: "次数成长未自动结算，可在沙盒中改 times；T37 追加批：攻×(15+3/级)%×3次灰机重建（原平值7×2）；打出后次数+1（max5）未建模"
@@ -214,7 +226,7 @@ window.DBF.cards = [
   {
     id: "card_ramona_tactics",
     name: "攻势推演", owner: "char_ramona", cost: 2, type: "权柄", target: "none", exhaust: false,
-    text: "使所有敌人力量临时降低4点，抽1张牌。",
+    text: "使所有敌人衰竭临时降低[防御力*7.5%]点。抽1张牌。（启灵2：抽到的卡牌每有1点算力消耗，获得35点银钥能量。）",
     effects: [ { op: "buff", buffId: "debuff_strength_down", stacksDefPct: { base: 7.5, perLv: 1.5 }, stacks: 1, duration: 1, target: "all_enemies" }, { op: "draw", value: 1 } ],
     upgrade: null, terms: ["term_strength"], generated: false,
     source: "gamekee 拉蒙娜角色页", notes: "T37 追加批：全体失力 防×(7.5+1.5/级)%点（点数=层数×1点）灰机重建（原平值4）；临时按1回合估；启灵2银钥 未建模"
@@ -222,7 +234,7 @@ window.DBF.cards = [
   {
     id: "card_ramona_awaken",
     name: "世界演绎法", owner: "char_ramona", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
-    text: "狂气爆发：获得100点银钥能量，从抽牌堆/弃牌堆选1张牌置入手牌且算力消耗变0。",
+    text: "获得100点银钥能量。选择1张抽牌堆或弃牌堆的牌置入手牌，使其算力消耗变为0点。（启灵3：将1张灵感洗入抽牌堆。）",
     effects: [ { op: "silver", value: 100 } ],
     upgrade: null, terms: [], generated: false,
     source: "gamekee 拉蒙娜角色页", notes: "选牌入手牌未自动结算，可用左侧面板生成卡牌替代"
@@ -240,19 +252,19 @@ window.DBF.cards = [
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
   { id: "card_agrippa_journey", name: "迷途之旅", owner: "char_agrippa", cost: 1, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "阿格里帕获得25点狂气。灵知觉醒：阿格里帕施加的中毒提高50%。",
+    text: "阿格里帕获得25点狂气。灵知觉醒：阿格里帕施加的中毒提高50%。回合结束后，获得[防御力*12.5%]点护盾。保留。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "中毒强化未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
   { id: "card_agrippa_alms", name: "不耐的施舍", owner: "char_agrippa", cost: 1, type: "防御", target: "self", exhaust: false,
-    text: "护盾 防御力*10%。获得4点护盾。当前的胚胎融合翻倍。",
+    text: "获得[防御力*12.5%]点护盾。当前的胚胎融合翻倍，该效果至多使胚胎融合+100，不受胚胎融合提高效果加成。（启灵1：使手牌中算力消耗最高的1张卡在本回合中算力消耗-1。）",
     effects: [ { op: "block", scaleDefense: 0.125, scalePerLv: 0.025 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "胚胎融合（血肉机制）未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵1：使手牌中算力消耗最高的 1 张卡在本回合；当前的胚胎融合翻倍，该效果至多使胚胎融合 +10" },
   { id: "card_agrippa_spiral", name: "苍白回旋", owner: "char_agrippa", cost: 3, type: "攻击", target: "enemy", exhaust: false,
-    text: "伤害 攻击力*12%。造成4点伤害和等量中毒。每当触发吞噬时，将「苍白回旋」从弃牌堆置入手中，其算力消耗-1。",
+    text: "造成[攻击力*15%]（启灵3：[攻击力*22.5%]）点伤害和等量中毒。（启灵3：胚胎融合+20。）每当触发吞噬时，将「苍白回旋」从弃牌堆置入手中。",
     effects: [ { op: "damage", scaleAttack: 0.15, allEnemies: false, times: 1, scalePerLv: 0.03 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "等量中毒（4层）与回收机制未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵3： [攻击力*22.5%]；启灵3：胚胎融合 +20。；每当触发吞噬时，将「苍白回旋」从弃牌堆置入手中" },
   { id: "card_agrippa_awaken", name: "苍白的庇佑", owner: "char_agrippa", cost: 0, type: "狂气爆发", target: "none", exhaust: false,
-    text: "狂气爆发：吞噬：获得3点力量和1点戒备。获得8点护盾。对所有敌人施加6层中毒。（原文有乱码，按上下文校对）",
+    text: "【吞噬：获得[攻击力*10%]点力量和[防御力*2%]点戒备。】获得[防御力*40%]点护盾。对所有敌人施加[攻击力*75%]层中毒。",
     effects: [ { op: "block", scaleDefense: 0.4, scalePerLv: 0.08 }, { op: "buff", buffId: "debuff_poison", stacksAtkPct: { base: 75.0, perLv: 15.0 }, target: "all_enemies" } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 阿格里帕角色页(606761)", notes: "'戒备'buff与吞噬触发未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 2 项效果（1~6级成长）；未建模：吞噬：获得 [攻击力*10%] 点力量和 [防御" },
 
@@ -266,19 +278,19 @@ window.DBF.cards = [
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "基础牌口径修正 2026-10-02（T32）：平值4→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
   { id: "card_tulu_majesty", name: "不朽威仪", owner: "char_tulu", cost: 3, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "触腕伤害 攻击力*1.4%。图鲁获得25点狂气。灵知觉醒：图鲁每消耗1点算力，触腕伤害+1。",
+    text: "图鲁获得25点狂气。灵知觉醒：触腕数量上限+1，图鲁每消耗1点算力或弃掉1张图鲁的指令卡，获得[攻击力*1.6%]点触腕伤害和[攻击力*1.6%]点力量。保留。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "触腕伤害成长未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
   { id: "card_tulu_abyss", name: "深渊号令", owner: "char_tulu", cost: 4, type: "攻击", target: "none", exhaust: false,
-    text: "伤害 攻击力*30%。对所有敌人造成12点穿刺伤害。使所有触腕攻击1次，造成穿刺伤害。",
+    text: "对所有敌人造成[攻击力*60%]点穿刺伤害，额外享受x%触腕伤害和力量加成。使所有触腕攻击1次（启灵1：使所有触腕攻击所有敌人1次），造成100%的穿刺伤害。（启灵1：若当前姿态为「静海」，算力消耗降低2点。）余波：驱使1条触腕攻击敌方。",
     effects: [ { op: "damage", scaleAttack: 0.6, allEnemies: true, times: 1, scalePerLv: 0.12 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "号令触腕未自动结算（启灵①后触腕也攻击全体）；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵1：使所有触腕攻击所有敌人 1 次；启灵1：若当前姿态为「静海」，算力消耗降低 2 ；余波：驱使 1 条触腕攻击敌方；使所有触腕攻击 1 次，造成 100% 的穿刺伤" },
   { id: "card_tulu_spiral", name: "螺湮重临", owner: "char_tulu", cost: 3, type: "权柄", target: "self", exhaust: false,
-    text: "临时触腕伤害 攻击力*20%。驱散自身虚弱状态。临时触腕伤害+8。",
+    text: "驱散自身虚弱状态，获得[攻击力*20%]点临时触腕伤害和[攻击力*20%]点临时力量。（启灵3：获得15%临时暴击率。）若当前姿态为「静海」，额外使所有敌人在本回合中降低[防御力*20%]点衰竭。余波：驱使1条触腕攻击敌方。",
     effects: [ { op: "tentacleDmg", pct: 0.2, perLv: 0.04 }, { op: "buff", buffId: "buff_strength", stacks: 1, target: "self", perCalcAtkPct: { base: 20.0, perLv: 4.0 } } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "临时触腕伤害为独立属性，未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 2 项效果（1~6级成长）；未建模：启灵3：获得 15% 临时暴击率。；若当前姿态为「静海」，额外使所有敌人在本回合中降；余波：驱使 1 条触腕攻击敌方" },
   { id: "card_tulu_awaken", name: "星辰正位之刻", owner: "char_tulu", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
-    text: "狂气爆发：获得1条触腕。触腕伤害+10。临时暴击率+25%。",
+    text: "获得1条触腕。获得[攻击力*26%]点临时触腕伤害和[攻击力*26%]点临时力量。获得15%临时暴击率。",
     effects: [ { op: "tentacleDmg", pct: 0.26, perLv: 0.052 }, { op: "buff", buffId: "buff_strength", stacks: 1, target: "self", perCalcAtkPct: { base: 26.0, perLv: 5.2 } } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 图鲁角色页(606737)", notes: "触腕伤害+10与临时暴击率未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 2 项效果（1~6级成长）；未建模：获得 1 条触腕；获得 15% 临时暴击率" },
 
@@ -300,7 +312,7 @@ window.DBF.cards = [
     effects: [ { op: "block", scaleDefense: 0.2, scalePerLv: 0.04 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 莉兹角色页(606755)", notes: "跃迁机制未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：跃迁：下个回合开始前，每受到 1 次攻击，便将 ；保留" },
   { id: "card_liz_greenfire", name: "绿炎", owner: "char_liz", cost: 2, type: "攻击", target: "enemy", exhaust: true,
-    text: "伤害 攻击力*15%。对随机敌人造成6点穿刺伤害，施加50%伤害的中毒。回合结束时若在手牌或超维空间，升级为「腐化绿炎」。保留。",
+    text: "造成[攻击力*15%]点穿刺伤害，施加50%伤害的中毒。回合结束时若在手牌或超维空间，升级为「腐化绿炎」。算力不足时可以强行打出，但原本效果替换为获得3点狂气并消耗。保留。",
     effects: [ { op: "guku", value: 3 } ],
     upgrade: null, upgradeRef: "card_liz_corrupt_fire", terms: [], generated: false, source: "gamekee 莉兹角色页(606755)", notes: "随机目标+中毒未自动结算；升级链见 upgradeRef；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：回合结束时若在手牌或超维空间，升级为「腐化绿炎」；造成 [攻击力*15%] 点穿刺伤害，施加 50；保留" },
   { id: "card_liz_corrupt_fire", name: "腐化绿炎", owner: "char_liz", cost: 2, type: "攻击", target: "enemy", exhaust: true,
@@ -312,7 +324,7 @@ window.DBF.cards = [
     effects: [ { op: "damage", value: 6, times: 3 } ],
     upgrade: null, terms: [], generated: true, source: "gamekee 莉兹角色页(606755)", notes: "衍生卡；V1.5.1：算力不足可强行打出改为获7狂气并消耗" },
   { id: "card_liz_awaken", name: "告死之舞", owner: "char_liz", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
-    text: "狂气爆发：获得2点临时力量。弃掉手牌中所有莉兹的牌，并触发他们的效果。",
+    text: "获得[攻击力*20%]点临时力量。弃掉手牌中所有莉兹的牌，并触发他们的效果。（启灵3：每弃掉2张牌，便抽1张牌。）",
     effects: [ { op: "buff", buffId: "buff_strength", stacks: 1, target: "self", perCalcAtkPct: { base: 20.0, perLv: 4.0 } } ],
     upgrade: null, terms: ["term_strength"], generated: false, source: "gamekee 莉兹角色页(606755)", notes: "弃牌触发效果未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵3：每弃掉 2 张牌，便抽 1 张牌。；弃掉手牌中所有莉兹的牌，并触发他们的效果" },
 
@@ -326,19 +338,19 @@ window.DBF.cards = [
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "基础牌口径修正 2026-10-02（T32）：平值3→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
   { id: "card_kasia_prelude", name: "演出序幕", owner: "char_kasia", cost: 2, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "力量 攻击力*8%。卡茜亚获得25点狂气。灵知觉醒：卡茜亚每打出1张卡牌，获得3点临时力量。",
+    text: "卡茜亚获得25点狂气。灵知觉醒：卡茜亚每打出1张卡牌，获得[攻击力*12%]点临时力量。保留。",
     effects: [ { op: "guku", value: 25, perLv: 5.0 } ],
     upgrade: null, terms: ["term_strength"], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "灵知觉醒回力量未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）" },
   { id: "card_kasia_telekinesis", name: "隔空取物", owner: "char_kasia", cost: 0, type: "权柄", target: "none", exhaust: false,
-    text: "伤害 攻击力*15%。将超维空间最右边的牌置入手牌。随机造成5点伤害2次。跃迁：获得1点临时力量。（V1.5.1：可选任意超维空间卡牌，跃迁临时力量提高为攻击力16%）",
+    text: "视为「打击」。选择超维空间任意1张牌置入手牌并使其算力消耗-2。随机造成[攻击力*20%]点伤害2次，获得[攻击力*12%]点临时力量。（启灵3：余波：将1张「灵感」洗入抽牌堆。）",
     effects: [ { op: "damage", scaleAttack: 0.2, allEnemies: false, times: 2, scalePerLv: 0.04 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 卡茜亚角色页(606736)+V151(627941)", notes: "超维空间取牌/跃迁未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：选择超维空间任意 1 张牌置入手牌并使其算力消耗；启灵3：余波：将 1 张「灵感」洗入抽牌堆。；视为「打击」" },
   { id: "card_kasia_disappear", name: "统统消失!", owner: "char_kasia", cost: 1, type: "权柄", target: "self", exhaust: false,
-    text: "获得10点狂气。将所有手牌洗入抽牌堆，抽取等量的牌。跃迁：返还「统统消失!」的算力消耗。",
+    text: "获得10点狂气。弃掉手牌中的症状和状态卡，将其他手牌洗入抽牌堆，抽取等同于弃掉和洗入数量的牌。（启灵1：每抽1张牌获得3点狂气。）跃迁：返还「统统消失！」的算力消耗。",
     effects: [ { op: "guku", value: 10 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "洗牌抽牌简化为不处理手牌" },
   { id: "card_kasia_awaken", name: "魔术嘉年华", owner: "char_kasia", cost: 0, type: "狂气爆发", target: "none", exhaust: false,
-    text: "狂气爆发：对所有敌人造成11点伤害，抽3张牌，每抽到1张卡茜亚的指令卡就对随机敌人造成11点伤害。",
+    text: "对所有敌人造成[攻击力*75%]点伤害，抽3张牌（启灵2：抽4张牌），每抽到1张卡茜亚的指令卡就对随机敌人造成[攻击力*75%]点伤害。使卡茜亚所有基础伤害提高x%。",
     effects: [ { op: "damage", scaleAttack: 0.75, allEnemies: true, times: 1, scalePerLv: 0.15 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 卡茜亚角色页(606736)", notes: "按抽牌追伤未自动结算；V1.5.1超限爆发改版；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵2：抽 4 张牌；启灵2：症状卡、状态卡或；使卡茜亚所有基础伤害提高 x%" },
 
@@ -352,19 +364,19 @@ window.DBF.cards = [
     effects: [ { op: "block", scaleDefense: 0.1, scalePerLv: 0.02 }, { op: "guku", value: 5 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "基础牌口径修正 2026-10-02（T32）：平值3→防御力×10%缩放（wiki公式，旧值=等级1参考）" },
   { id: "card_jenkin_fold", name: "空间折叠", owner: "char_jenkin", cost: 2, type: "灵知觉醒", target: "self", exhaust: false,
-    text: "詹金获得25点狂气。灵知觉醒：暴击率提高25%，詹金每造成1次伤害，在本回合中暴击伤害便提高15%，每回合最多叠加5次。",
+    text: "詹金获得25点狂气。灵知觉醒：暴击率提高25%，詹金每造成1次伤害，临时暴击伤害+15%，每回合最多叠加5次。保留。",
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "暴击成长未自动结算" },
   { id: "card_jenkin_rats", name: "集结鼠群", owner: "char_jenkin", cost: 0, type: "权柄", target: "none", exhaust: false,
-    text: "「鼠群冲击」伤害 攻击力*25%。将1张造成10点伤害X+1次伤害的「鼠群冲击」洗入抽牌堆。跃迁：将1张「布朗出动!」洗入抽牌堆。（算力消耗为X，随持有鼠群冲击数变化）",
+    text: "将1张造成[攻击力*30%]点伤害X+4次伤害的「鼠群冲击」洗入抽牌堆顶部。跃迁：将1张「布朗出动！」洗入抽牌堆顶部。",
     effects: [ { op: "damage", scaleAttack: 0.3, allEnemies: false, times: 4, scalePerLv: 0.06 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "变费X与衍生卡机制，框架暂不自动结算；旧卡建模批（2026-10-02，灰机逐级）：已建模 1 项效果（1~6级成长）；未建模：跃迁：将 1 张「布朗出动！」洗入抽牌堆顶部" },
   { id: "card_jenkin_brown", name: "布朗出动!", owner: "char_jenkin", cost: 1, type: "攻击", target: "enemy", exhaust: false,
-    text: "伤害 攻击力*15%（伤害成长 攻击力*5%）。造成6点伤害。在本场战斗中，「布朗出动!」造成的基础伤害提高2点。跃迁：改为对所有敌人造成伤害。",
+    text: "对所有敌人造成[攻击力*15%]点伤害。在本场战斗中，「布朗出动！」造成的伤害提高[攻击力*5%]点。（启灵1：「鼠群冲击」造成的伤害提高[攻击力*2.5%]点。）跃迁：该技能额外享受1倍力量加成。",
     effects: [ { op: "damage", scaleAttack: 0.15, allEnemies: true, times: 1, scalePerLv: 0.03 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "本场战斗成长+2/次未自动结算；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：启灵1：「鼠群冲击」造成的伤害提高 [攻击力*2；跃迁：该技能额外享受 1 倍力量加成；在本场战斗中，「布朗出动！」造成的伤害提高 [攻" },
   { id: "card_jenkin_awaken", name: "雾都街童", owner: "char_jenkin", cost: 0, type: "狂气爆发", target: "self", exhaust: false,
-    text: "狂气爆发：将3张附加消耗的「布朗出动!」置入手牌。临时暴击伤害+50%。",
+    text: "将3张（启灵3：4张）附加消耗、算力消耗为0的「布朗出动！」置入手牌。临时暴击伤害+50%。",
     effects: [],
     upgrade: null, terms: [], generated: false, source: "gamekee 詹金角色页(606759)", notes: "生成卡与临时爆伤未自动结算；V1.5.1超限爆发「偷袭!」追加置入「超级大集结!」" },
 
@@ -382,15 +394,15 @@ window.DBF.cards = [
     effects: [ { op: "guku", value: 25 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "超维空间联动未自动结算" },
   { id: "card_dafdel_necksnap", name: "断颈一击", owner: "char_dafdel", cost: 3, type: "攻击", target: "enemy", exhaust: false,
-    text: "伤害 攻击力*32%。对生命最低的敌人造成14点伤害。若击杀敌人，在本次关卡中基础伤害永久提高25%。跃迁：改为随机造成28点伤害。",
+    text: "对生命最低的敌人造成[攻击力*50%]点伤害，力量在「断颈一击」上发挥5倍效果。达芙黛尔以任意方式击杀敌人后，「断颈一击」在本次关卡中基础伤害永久提高25%。跃迁：改为对生命最高敌人造成[攻击力*75%]点伤害。",
     effects: [ { op: "damage", scaleAttack: 0.5, allEnemies: false, times: 1, scalePerLv: 0.1 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "选最低生命目标+击杀成长未自动结算；V1.5.1称击杀奖励10%→20%（与角色页25%不一致）；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：跃迁：改为对生命最高敌人造成 [攻击力*75%]；达芙黛尔以任意方式击杀敌人后，「断颈一击」在本次" },
   { id: "card_dafdel_tide", name: "异质潮汐", owner: "char_dafdel", cost: 1, type: "权柄", target: "enemy", exhaust: false,
-    text: "力量 攻击力*2%。获得1点力量并易伤前排敌人。跃迁：改为：获得5点临时力量并易伤前排敌人。",
-    effects: [ { op: "buff", buffId: "buff_strength", stacks: 1, target: "self", perCalcAtkPct: { base: 2.0, perLv: 0.4 } } ],
-    upgrade: null, terms: ["term_strength", "term_vul"], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "'前排'按单目标简化；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：跃迁：改为：获得 [攻击力*10%] 点临时力量" },
+    text: "获得[攻击力*2%]点力量并易伤所有敌人。跃迁：改为：获得[攻击力*10%]点临时力量并易伤所有敌人。",
+    effects: [ { op: "buff", buffId: "buff_strength", stacks: 1, target: "self", perCalcAtkPct: { base: 2.0, perLv: 0.4 } }, { op: "buff", buffId: "debuff_vul", stacks: 1, target: "all_enemies" } ],
+    upgrade: null, terms: ["term_strength", "term_vul"], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "✅T39（2026-10-03）：text 同步 wiki 当前版（易伤=所有敌人），effects 补 易伤全体1层；旧 notes「前排按单目标简化」作废；旧卡建模批二（2026-10-02，灰机逐级重建）：力量钩子已建模；未建模：跃迁：改为：获得 [攻击力*10%] 点临时力量" },
   { id: "card_dafdel_awaken", name: "原质之海", owner: "char_dafdel", cost: 0, type: "狂气爆发", target: "none", exhaust: false,
-    text: "狂气爆发：对所有敌人造成13点伤害。创造1张自定义的「千面幻象」将其置入手牌，若超维空间没有「千面幻象」，将其复制置入超维空间。",
+    text: "对所有敌人造成[攻击力*50%]点伤害。创造1张自定义的「千面幻象」将其置入手牌，若当前非超维回合且超维空间没有「千面幻象」，将其复制置入超维空间，否则将1张「灵感」置入手中。",
     effects: [ { op: "damage", scaleAttack: 0.5, allEnemies: true, times: 1, scalePerLv: 0.1 } ],
     upgrade: null, terms: [], generated: false, source: "gamekee 达芙黛尔角色页(610898)", notes: "「千面幻象」自定义生成卡未建卡；V1.5.1:千面幻象获保留、超限爆发「幻雾迷烟」额外置入2张复制；旧卡建模批二（2026-10-02，灰机逐级重建，替换旧占位值）：已建模 1 项效果（1~6级成长）；未建模：创造 1 张自定义的「千面幻象」将其置入手牌，若" },
 

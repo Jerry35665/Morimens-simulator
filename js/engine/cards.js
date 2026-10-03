@@ -199,7 +199,7 @@ const Cards = {
       if (branch.length) Log.add(`↪ 触腕姿态「${b.tentacle.stance}」分支`, "sys");
     }
     for (const eff of effList) {
-      this.resolveEffect(eff, owner, target, card);
+      this.resolveEffect(eff, owner, target, card, inst);
     }
     /* 维度穿梭（T36 界域系统）：每回合首次打出指令卡后，临时原始复制置入超维空间 */
     if (wasFirstCard && typeof RealmSys !== "undefined") RealmSys.onFirstCardPlayed(card);
@@ -302,6 +302,11 @@ const Cards = {
           out.push(`回复${v}点生命${suffix}`);
           break;
         }
+        case "discardHeal": {
+          const pctEX = (eff.pctConstitution || 0) + (eff.perLv || 0) * (lv - 1);
+          out.push(`弃掉所有手牌，每弃1张额外回复体质${pctEX}%点生命`);
+          break;
+        }
         case "guku": {
           const bonus = (card.type === "攻击" || card.type === "防御") ? lv - 1 : 0;
           if (eff.perSpend != null) {
@@ -364,8 +369,8 @@ const Cards = {
     return out;
   },
 
-  /* 单个效果结算 */
-  resolveEffect(eff, source, target, card) {
+  /* 单个效果结算（inst=打出的卡实例，discardHeal 等需排除本卡的效果用） */
+  resolveEffect(eff, source, target, card, inst) {
     switch (eff.op) {
       case "damage": {
         const times = eff.times || 1;
@@ -553,6 +558,20 @@ const Cards = {
           if (v !== before) Log.add(`✦ 天赋「灵知解构」：狂气回充 ${source.stats?.gukuRecharge || 0} → 回复 ${before}→${v}`, "good");
         }
         if (t && v > 0) Damage.heal(t, v, card.name);
+        break;
+      }
+      case "discardHeal": {
+        /* 等价交换（T39 朵尔缺牌批）：弃掉所有手牌（不含本卡），每弃 1 张额外回复 体质×X% 生命。
+         * 粒度=合计后一次取整（逐张取整/聚合 ceil 无锚点区分，待实测） */
+        const bEX = State.battle;
+        if (!bEX) break;
+        const others = bEX.piles.hand.filter(c => !inst || c.uid !== inst.uid);
+        const conEX = source.stats?.constitutionCombat || source.stats?.constitution || 0;
+        const pctEX = (eff.pctConstitution || 0) + (eff.perLv || 0) * ((source.cardLv || 1) - 1);
+        const extra = Math.ceil(conEX * pctEX * others.length / 100);
+        for (const c of others) this._move(c.uid, "discard");
+        if (extra > 0) Damage.heal(source, extra, card.name);
+        Log.add(`弃掉 ${others.length} 张手牌，额外回复 ${extra} 点生命${eff.perLv ? "" : ""}`, "sys");
         break;
       }
       default:

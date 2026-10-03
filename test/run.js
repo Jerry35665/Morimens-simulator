@@ -250,10 +250,10 @@ function runAllTests() {
   check("抽5张", State.battle.piles.hand.length === 5, "实际:" + State.battle.piles.hand.length);
   check("算力5", State.battle.energy === 5);
   check("开战效果结算（预兆/机械降神日志）", document.getElementById("log-list").innerText.includes("战斗开始"));
-  { /* T15/T20 SSR 口径牌组：御四家 wiki 映射（萝坦4/朵尔3[等价交换缺卡]/奥吉尔3[不定壁垒缺卡]/拉蒙娜4）= 14 张 */
+  { /* T15/T20 SSR 口径牌组：御四家 wiki 映射（萝坦4/朵尔4[等价交换 10-03 建卡]/奥吉尔4[不定壁垒]/拉蒙娜4）= 16 张 */
     const p = State.battle.piles;
     const total = p.draw.length + p.hand.length + p.discard.length + p.exhaust.length;
-    check("T15 SSR口径牌堆=15张(wiki映射 4+4+3+4，奥吉尔不定壁垒 10-02 建卡)", total === 15, "实际:" + total);
+    check("T15 SSR口径牌堆=16张(wiki映射 4×4，等价交换建卡后朵尔补齐)", total === 16, "实际:" + total);
     check("T15 爆发/觉醒不进默认牌堆", !p.draw.concat(p.hand, p.discard, p.exhaust)
       .some(c => ["狂气爆发", "灵知觉醒"].includes((Cards.def(c) || {}).type)));
   }
@@ -1458,11 +1458,11 @@ function runAllTests() {
     Cards.generate("card_rc_fallen");
     b23.energy = 9;
     Cards.play(b23.piles.hand.filter(c => c.defId === "card_rc_fallen").pop().uid, b23.enemies[0].uid);
-    check("T38C 长刃·陨(视为打击)打出后计数+1", b23.strikesPlayed === 3, "实际:" + b23.strikesPlayed);
+    check("T38C 长刃·陨(视为打击)打出后计数+1（含桀骜之刃T39文本同步后计入）", b23.strikesPlayed === 4, "实际:" + b23.strikesPlayed);
     Cards.generate("char_c17_s1");
     const hbp23 = b23.piles.hand.find(c => c.defId === "char_c17_s1");
     if (hbp23) Cards.play(hbp23.uid, null);
-    check("T38C 人间爆破(视为打击)计数+1", b23.strikesPlayed === 4, "实际:" + b23.strikesPlayed);
+    check("T38C 人间爆破(视为打击)计数+1", b23.strikesPlayed === 5, "实际:" + b23.strikesPlayed);
     Cards.generate("card_rc_fallen");
     b23.energy = 9;
     Cards.play(b23.piles.hand.filter(c => c.defId === "card_rc_fallen").pop().uid, b23.enemies[0].uid);
@@ -1513,9 +1513,9 @@ function runAllTests() {
      * 匹配规则：每个 scaleAttack/Defense/Constitution 效果在 text 中找到公式满足
      *   base==eBase（文本 Lv1 形）或 base+perLv==eBase（文本 A+B×级 形，引擎 resolve=base+perLv×(级-1)）；
      * 基础打击/防御 文本无等级项+perLv>0=T32 已核实口径；中毒层数/力量获得公式不入损伤配对。
-     * 标注清单（gamekee 旧文本 vs 灰机口径，T37⑭/⑮ 已全量核验灰机权威，不修）：深渊号令/隔空取物/集结鼠群/
-     * 断颈一击/不耐的施舍/苍白回旋——后两者文本 10%/12% 为旧 Lv1 值，灰机线 (10+2.5×级)/(12+3×级) 与效果 12.5+2.5/15+3 同线 */
-    const A_TEXT_STALE = new Set(["card_tulu_abyss", "card_kasia_telekinesis", "card_jenkin_rats", "card_dafdel_necksnap", "card_agrippa_alms", "card_agrippa_spiral"]);
+     * 标注清单：T39（2026-10-03）后将原 6 张（深渊号令/隔空取物/集结鼠群/断颈一击/不耐的施舍/苍白回旋）
+     * 的 text 全部同步 wiki 当前版，清单归零 */
+    const A_TEXT_STALE = new Set();
     const A_KEY = { damage: "scaleAttack", block: "scaleDefense", heal: "scaleConstitution" };
     const A_RE = {};
     for (const [op, word] of [["damage", "攻击力"], ["block", "防御力"], ["heal", "体质"]]) {
@@ -1795,6 +1795,68 @@ function runAllTests() {
     const dAuto = hpA - e4.hp;
     check("T41 希莱斯特 成员触发触腕×1.5、自动触腕不吃词条（E6 口径）", dCel === Math.ceil(dAuto * 1.5) && dAuto > 0,
       `成员触发:${dCel} 自动:${dAuto}`);
+  }
+
+  /* ---- 朵尔缺牌批（2026-10-03 用户「朵尔少了一张牌」）：等价交换建卡 + buildDeck wiki 映射补齐 ---- */
+  console.log("== 8.27 朵尔缺牌批 ==");
+  {
+    State.newBattle();
+    const d28 = State.addAlly("char_doll", 70);
+    d28.personaLv = 0; d28.innerGridLv = 0; d28.spiritAdaptLv = 0; d28.cardLv = 1;
+    d28.enlightenOn = [true, true, true];
+    d28.fatewheels = []; d28.fwStacks = [0, 0]; d28.pacts = [];
+    d28.pactDetails = [null, null, null, null, null, null]; d28.pactSetBound = {};
+    State.recalcAllyStats(d28);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b28 = State.battle;
+    const names28 = b28.piles.draw.concat(b28.piles.hand).map(c => Cards.def(c).name);
+    check("T39朵尔 牌组=4张含等价交换（wiki 技能2 映射，觉醒/爆发不进堆）",
+      names28.includes("等价交换") && names28.length === 4
+      && !names28.includes("灵肉两分") && !names28.includes("理性，真理与现实"),
+      names28.join("/"));
+    /* 打出等价交换：弃掉其余手牌（4张），治疗=主治疗(含灵知解构)+弃4张额外回复 */
+    b28.energy = 9;
+    b28.team.hp = Math.max(1, b28.team.hp - 200);
+    Cards.generate("card_doll_exchange");
+    const ex28 = b28.piles.hand.filter(c => c.defId === "card_doll_exchange").pop();
+    const hp28 = b28.team.hp;
+    Cards.play(ex28.uid, null);
+    const con28 = d28.stats.constitutionCombat;
+    const exp28 = Math.ceil(Math.ceil(con28 * 0.25) * (1 + d28.stats.gukuRecharge * 0.005)) + Math.ceil(con28 * 0.05 * 4);
+    check("T39朵尔 等价交换：主治疗(含灵知解构)+弃4张额外回复", b28.team.hp - hp28 === exp28 && b28.piles.hand.length === 0,
+      `实际:${b28.team.hp - hp28} 预期:${exp28}（体质${con28} 弃4张 手牌余${b28.piles.hand.length}）`);
+  }
+
+  /* ---- T39 卡牌描述版本对齐（2026-10-03 用户点名 9 人）：text 同步 wiki 当前版 + 异质潮汐补易伤 ---- */
+  console.log("== 8.28 T39 描述对齐批 ==");
+  {
+    const T = (id) => (DBF.cards.find(c => c.id === id) || {}).text || "";
+    check("T39 萝坦 桀骜之刃/恣睢之浪/混沌之兽 同步 wiki 百分比公式",
+      T("card_rotan_blade").includes("[攻击力*7.5%]") && T("card_rotan_blade").includes("视为「打击」")
+      && T("card_rotan_wave").includes("[攻击力*7.5%]") && T("card_rotan_awaken").includes("[攻击力*40%]"));
+    check("T39 拉蒙娜 女王之剑15%×3/攻势推演衰竭/世界演绎法 同步",
+      T("card_ramona_queenblade").includes("[攻击力*15%]") && T("card_ramona_queenblade").includes("伤害次数+1")
+      && T("card_ramona_tactics").includes("衰竭") && T("card_ramona_tactics").includes("[防御力*7.5%]")
+      && T("card_ramona_awaken").includes("100点银钥能量"));
+    check("T39 阿格里帕 迷途之旅/苍白回旋15%/苍白的庇佑/不耐的施舍 同步",
+      T("card_agrippa_journey").includes("回合结束后") && T("card_agrippa_spiral").includes("[攻击力*15%]")
+      && T("card_agrippa_awaken").includes("【吞噬") && T("card_agrippa_alms").includes("[防御力*12.5%]"));
+    check("T39 图鲁 不朽威仪1.6%/深渊号令60%/螺湮重临/星辰正位 同步",
+      T("card_tulu_majesty").includes("触腕数量上限") && T("card_tulu_abyss").includes("[攻击力*60%]")
+      && T("card_tulu_spiral").includes("[攻击力*20%]") && T("card_tulu_awaken").includes("[攻击力*26%]"));
+    check("T39 奥吉尔 骑士热诚/穿刺之枪/不定壁垒/七艺 同步",
+      T("card_ogilvy_zeal").includes("[攻击力*3.75%]") && T("card_ogilvy_spear").includes("[攻击力*25%]")
+      && T("card_ogilvy_barrier").includes("[防御力*7%]") && T("card_ogilvy_awaken").includes("[防御力*30%]"));
+    check("T39 莉兹/卡茜亚/詹金/达芙黛尔 代表卡同步",
+      T("card_liz_greenfire").includes("强行打出") && T("card_liz_awaken").includes("[攻击力*20%]")
+      && T("card_kasia_prelude").includes("[攻击力*12%]") && T("card_kasia_awaken").includes("[攻击力*75%]")
+      && T("card_jenkin_rats").includes("抽牌堆顶部") && T("card_jenkin_brown").includes("对所有敌人")
+      && T("card_dafdel_necksnap").includes("[攻击力*50%]") && T("card_dafdel_awaken").includes("千面幻象"));
+    const tide = DBF.cards.find(c => c.id === "card_dafdel_tide");
+    check("T39 异质潮汐 补 易伤所有敌人1层（wiki：力量并易伤所有敌人）",
+      (tide.effects || []).some(e => e.buffId === "debuff_vul" && e.target === "all_enemies")
+      && T("card_dafdel_tide").includes("易伤所有敌人"));
   }
 
   renderSummary();

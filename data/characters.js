@@ -49,11 +49,11 @@ window.DBF.characters = [
     overdrive: "超限爆发「心智分析」（人格深化+4）：回合开始时回复等同于朵尔64%体质的生命，持续3回合（效果随「理性，真理与现实」的等级提升）",
     talent: "天赋·灵知解构：朵尔每拥有1点狂气回充等级属性，就使「外域手术」与「等价交换」回复生命效果提高0.5%",
     defaultDeck: [
-      "card_doll_strike", "card_doll_defend", "card_doll_rain",
-      "card_doll_surgery", "card_doll_awaken"
+      "card_doll_strike", "card_doll_defend", "card_doll_surgery",
+      "card_doll_exchange", "card_doll_awaken"
     ],
     source: "gamekee 角色页(606627)+游戏内截图(Kuyo群 2026-09)",
-    notes: "奶妈定位；开局序章赠送；人格深化每层+0.8狂气回充/+1.2银钥充能（累计）"
+    notes: "奶妈定位；开局序章赠送；人格深化每层+0.8狂气回充/+1.2银钥充能（累计）；defaultDeck 10-03 修正：灵肉两分(觉醒)/理性真理与现实(爆发)不该占指令位，wiki 技能2=等价交换（此前缺卡）"
   },
   {
     id: "char_ogilvy",
