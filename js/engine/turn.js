@@ -17,6 +17,7 @@ const Turn = {
     if (!b.enemies.length) { alert("请先在左侧面板添加怪物"); return; }
     b.phase = "starting";
     Log.add("========== 战斗开始 ==========", "sys");
+    b.deathResistChance = 1;   // 死亡抵抗概率系数每场重置（T48②；软重开/连战也复位）
     /* 尘封旧忆「每钥令每探索 1 次」跨战斗持久（T12）：战斗镜像从探索级拷入；
      * 清空点在探索边界——主页开始战斗按钮/State.reset（每场=新探索）、resetMapRun（重开一把） */
     b.usedYogens = (State.usedYogensExplore || []).slice();
@@ -53,6 +54,11 @@ const Turn = {
     b.firstCardPlayed = false;  // 魔女宽檐帽首卡标记重置（T8）
     b.strikesPlayed = 0;        // discPerStrike 打击计数重置（T32 实测批；T38 C 改全队共享数值型）
     b.whaleFuseReady = false;   // 巨剑·鲸落合成旗：同回合语义，跨回合失效（T42②）
+    /* 星辰篇（T48）：算力调和层数/本回合出牌数/银钥觉醒每回合1次 计数重置 */
+    b.energyTune = 0;
+    b.playedThisTurn = 0;
+    b.silverAwakenThisTurn = 0;
+    b.burstUsedThisTurn = [];
     if (typeof Tentacle !== "undefined") Tentacle.onTurnStart();   // 触腕姿态每回合开始重置为潮涌
     if (typeof RealmSys !== "undefined") RealmSys.onTurnStart();   // 血肉融合/熔炉积攒 + 超维精通（T36 界域系统）
     if (window.Yogens) Yogens.tickDelayed();   // 延迟护盾等（下回合开始时结算）
@@ -79,6 +85,12 @@ const Turn = {
         used: (b.usedYogens || []).slice(), castHistory: (b.yogenCastHistory || []).slice(),
         starBless: b.starBless || 0, poem: (b.poemUsed || []).slice(),
         delayed: JSON.parse(JSON.stringify(b.delayed || []))
+      },
+      /* 星辰篇（T48）：调和层数/回合出牌/爆发记录/觉醒次数/死亡抵抗系数 随快照与回溯 */
+      star: {
+        energyTune: b.energyTune || 0, playedThisTurn: b.playedThisTurn || 0,
+        burstUsed: (b.burstUsedThisTurn || []).slice(), awakenThisTurn: b.silverAwakenThisTurn || 0,
+        deathResistChance: (b.deathResistChance != null) ? b.deathResistChance : 1
       },
       team: b.team, teamStats: b.teamStats, aiIndex: b.aiIndex,
       playedCount: b.playedCount || 0,   // T34 条件边：本战斗我方累计打牌数（「出牌>=N」条件用）
@@ -114,6 +126,13 @@ const Turn = {
       b.starBless = s.yogen.starBless;
       b.poemUsed = s.yogen.poem.slice();
       b.delayed = JSON.parse(JSON.stringify(s.yogen.delayed));
+    }
+    if (s.star) {
+      b.energyTune = s.star.energyTune;
+      b.playedThisTurn = s.star.playedThisTurn;
+      b.burstUsedThisTurn = s.star.burstUsed.slice();
+      b.silverAwakenThisTurn = s.star.awakenThisTurn;
+      b.deathResistChance = s.star.deathResistChance;
     }
     b.team = JSON.parse(JSON.stringify(s.team));
     b.teamStats = JSON.parse(JSON.stringify(s.teamStats));
@@ -160,6 +179,17 @@ const Turn = {
     if (!b || b.phase !== "play") return;
     b.phase = "enemy";
 
+    /* 星辰篇·狂气调和（T48）：回合结束时每有 1 名未释放狂气爆发的唤醒体 → 银钥 +200% 队伍平均银充 */
+    if (State.starEnv) {
+      const notBurst = b.allies.filter(a => !(b.burstUsedThisTurn || []).includes(a.uid)).length;
+      if (notBurst > 0) {
+        const gain = Math.round(2 * State.avgSilverCharge()) * notBurst;
+        b.silver += gain;
+        Log.add(`⭐ 狂气调和：${notBurst} 名唤醒体未爆发 → 银钥 +${gain}（200%×平均银充 ${State.avgSilverCharge().toFixed(1)}/人）`, "good");
+      }
+      b.burstUsedThisTurn = [];
+    }
+
     /* 命轮回合末钩子（T8 四期）：极夜与破晓银钥/阿库特之春/慈悲的哺育/永不停歇的演奏 */
     if (typeof Wheels !== "undefined") Wheels.onTurnEnd();
     /* 超维回合结束（维度跃迁：-25% 效果仅超维回合内） */
@@ -201,13 +231,14 @@ const Turn = {
     const c = Cards._move(uid, "discard");
     if (c) Log.add(`弃置 <b>${Cards.def(c).name}</b>`, "sys");
   },
-  /* 回合结束弃手牌：def.retain 的卡保留在手（词条 2026-09-22） */
+  /* 回合结束弃手牌：def.retain 的卡保留在手（词条 2026-09-22）；inst.retainInst=星辰篇银钥觉醒
+   * 置入的灵知觉醒牌获「保留」（T48，本场战斗有效的实例级标记） */
   discardHand() {
     const b = State.battle;
     const keep = [];
     for (const inst of [...b.piles.hand]) {
       const def = Cards.def(inst);
-      if (def.retain) { keep.push(inst); Log.add(`${def.name}（保留）留在了手中`, "sys"); }
+      if (def.retain || inst.retainInst) { keep.push(inst); Log.add(`${def.name}（保留）留在了手中`, "sys"); }
       else this._discardOne(inst.uid);
     }
     b.piles.hand = keep;

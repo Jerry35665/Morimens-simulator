@@ -305,6 +305,11 @@ const Damage = {
     if (unit.side === "ally") {
       const t = State.battle.team;
       t.hp = Math.max(0, t.hp - remain);
+      /* 死亡抵抗（T48②）：受致命伤时不立即判负——roll 队伍死抗总和%（>100 封顶），
+       * 成功→hp=1 存活+此后概率减半；失败→hp 保持 0 由 checkEnd 判负。
+       * 本方法=所有伤害路径的统一落账口（deal/反击/中毒/出血/余烬引爆/触腕），一处覆盖全部致命路径；
+       * 沙盒手调血量（State.adjustHp/UIBoard.zeroHp）为用户干预，不走判定 */
+      if (t.hp <= 0) State.tryDeathResist();
     } else {
       unit.hp = Math.max(0, unit.hp - remain);
     }

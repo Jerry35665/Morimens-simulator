@@ -168,14 +168,21 @@ const Cards = {
           Log.add(`<span class="dim">${card.name} 减费：本回合已打出 ${n} 张「打击」→ 算力 -${n}</span>`, "sys");
         }
       }
-      const spend = isX ? b.energy : Math.max(0, card.cost - disc);
-      if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(减费)` : ""}）`); return; }
+      /* 星辰篇·算力调和（T48）：单回合出牌达 10 张后每打出 1 张 +1 层，使本回合内每次打出指令卡
+       * 算力消耗 +1（打出时结算已有层数，打出后获得新层——第 11 张触发首层、第 12 张起 +1 费）；
+       * 消耗的每点额外算力 → 100% 打出者银充的银钥能量，可叠加。发动超维空间后重置（超维空间重置点未接，登记 DATA-TODO）。
+       * X 费=消耗所有算力，不叠加调和加成（实耗口径，注记待实测） */
+      const tune = (State.starEnv && !isX) ? (b.energyTune || 0) : 0;
+      if (tune > 0) Log.add(`<span class="dim">⭐ 算力调和 ×${tune}：本张算力消耗 +${tune}</span>`, "sys");
+      const spend = isX ? b.energy : Math.max(0, card.cost - disc + tune);
+      if (!isX && b.energy < spend) { alert(`算力不足（当前 ${b.energy}，需要 ${card.cost}${disc ? `-${disc}(减费)` : ""}${tune ? `+${tune}(调和)` : ""}）`); return; }
       b.energy -= spend;
       b.xSpend = isX ? spend : 0;   // X 费实耗（不定壁垒 timesXSpend/perSpend 等引用，T32 追加批）
       delete inst.disc;   // 减费随打出消耗
-      /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减（取整，用户 2026-10-02） */
+      /* 银钥结算（2026-09-28 实测曲线）：每消耗1算力获得 X 点银钥，X 按打出者银钥充能等级查表衰减（取整，用户 2026-10-02）
+       * 星辰篇·算力调和：额外算力部分不按查表，改按 100%×打出者银充/点（T48 截图口径） */
       const skLevel = (owner.stats && owner.stats.silverKeyCharge) || 15;
-      const silverGain = Math.round(State.silverPerCost(skLevel) * spend);
+      const silverGain = Math.round(State.silverPerCost(skLevel) * (spend - tune)) + Math.round((owner.stats && owner.stats.silverKeyCharge) || 0) * tune;
       b.silver += silverGain;
       if (isX) Log.add(`<span class="dim">X 费：消耗全部算力 ${spend} 点（银钥按实耗 +${silverGain}）</span>`, "sys");
     } else {
@@ -218,6 +225,12 @@ const Cards = {
     }
     if (wasFirstCard) b.firstCardPlayed = true;
     b.playedCount = (b.playedCount || 0) + 1;   // T34 条件边：「出牌>=N」计数（爆发卡走 releaseBurst 不计）
+    /* 星辰篇·算力调和（T48）：本回合出牌计数；>10 张后每打出 1 张获得 1 层（第 11 张触发首层） */
+    b.playedThisTurn = (b.playedThisTurn || 0) + 1;
+    if (State.starEnv && !isBurst && b.playedThisTurn > 10) {
+      b.energyTune = (b.energyTune || 0) + 1;
+      Log.add(`⭐ 算力调和获得 1 层（当前 ${b.energyTune} 层，后续每张算力消耗 +1）`, "good");
+    }
     /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
     if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
     inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
@@ -538,10 +551,18 @@ const Cards = {
         Log.add(`获得银钥能量 ${sv}${eff.chargePct != null ? `（银充${charge}×${eff.chargePct}%）` : ""}（当前 ${State.battle.silver}/1000）`, "sys");
         break;
       }
-      case "energy":
-        State.battle.energy = Math.min(10, State.battle.energy + eff.value);
-        Log.add(`${source.def.name} 获得 ${eff.value} 点算力（当前 ${State.battle.energy}）`, "sys");
+      case "energy": {
+        /* 星辰篇·算力满盈（T48）：算力可超 10，>12 的超出部分自动转 300% 队伍平均银充的银钥 */
+        if (State.starEnv) {
+          State.battle.energy += eff.value;
+          State.clampEnergyStar();
+          Log.add(`${source.def.name} 获得 ${eff.value} 点算力（当前 ${State.battle.energy}）`, "sys");
+        } else {
+          State.battle.energy = Math.min(10, State.battle.energy + eff.value);
+          Log.add(`${source.def.name} 获得 ${eff.value} 点算力（当前 ${State.battle.energy}）`, "sys");
+        }
         break;
+      }
       case "draw":
         this.draw(eff.value);
         break;
@@ -629,6 +650,14 @@ const Cards = {
       }
     }
     Log.add(`${ally.def.name} 狂气剩余 ${ally.guku}${isOverdrive ? "（超限减半）" : ""}`, "sys");
+    /* 星辰篇·狂气调和（T48）：每次释放狂气爆发后基础狂气 +10；记录本回合已爆发（回合末未爆发者转银钥）。
+     * 「狂气百分比提高效果减半」未建模——引擎现无「狂气获取提高X%」类词条，登记 DATA-TODO */
+    if (State.starEnv) {
+      b.burstUsedThisTurn = b.burstUsedThisTurn || [];
+      if (!b.burstUsedThisTurn.includes(ally.uid)) b.burstUsedThisTurn.push(ally.uid);
+      ally.guku = Math.min(ally.gukuMax || 100, ally.guku + 10);
+      Log.add(`⭐ 狂气调和：${ally.def.name} 基础狂气 +10（当前 ${ally.guku}）`, "good");
+    }
     /* 触腕集结（T7）：深海队爆发后 +1 层（回合末每层驱使 1 条触腕；深海精通概率额外层） */
     if (typeof Tentacle !== "undefined") Tentacle.onBurst(ally);
     /* 胚胎吞噬（血肉·猩红献祭）：血肉唤醒体爆发消耗手牌胚胎，触发护盾+力量 */

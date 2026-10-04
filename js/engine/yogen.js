@@ -17,11 +17,13 @@ const Yogens = {
 
   BASE_COST: 1000,   // 释放一次钥令的银钥消耗
 
-  /* 值解析：p=物象深度%、s=灵识深度%、v=固定值（全部向上取整） */
+  /* 值解析：p=物象深度%、s=灵识深度%、v=固定值（全部向上取整）。
+   * 星辰篇·归档刻痕（T48）：守密人每 1 钥令 → 深度 +1%（至多 50%），经 State.effDepths 生效 */
   val(e) {
     if (e.v != null) return e.v;
-    if (e.p != null) return Math.ceil((State.depths.physical || 0) * e.p / 100);
-    if (e.s != null) return Math.ceil((State.depths.spirit || 0) * e.s / 100);
+    const d = State.effDepths ? State.effDepths() : State.depths;
+    if (e.p != null) return Math.ceil((d.physical || 0) * e.p / 100);
+    if (e.s != null) return Math.ceil((d.spirit || 0) * e.s / 100);
     return 0;
   },
 
@@ -31,9 +33,15 @@ const Yogens = {
     return !!(b && b.phase === "play" && b.silver >= this.BASE_COST && (b.yogenCastsThisTurn || 0) < 2);
   },
 
-  /* 银钥觉醒当前消耗：每已获得 1 张翻倍 */
+  /* 银钥觉醒当前消耗：
+   * 常规（融灾等）：每已获得 1 张翻倍（1000/2000/4000…）
+   * 星辰篇·键能超载（T48）：每有一个已解锁灵知觉醒的唤醒体，额外扣 1000——
+   * 引擎按「在队唤醒体均视为已解锁灵知觉醒」实现（解锁条件未实测，注记待复核） */
   awakenCost() {
-    return this.BASE_COST * Math.pow(2, (State.battle && State.battle.silverAwakenCount) || 0);
+    const b = State.battle;
+    if (!b) return this.BASE_COST;
+    if (State.starEnv) return this.BASE_COST * (1 + b.allies.length);
+    return this.BASE_COST * Math.pow(2, b.silverAwakenCount || 0);
   },
 
   /* 可置入的「灵知觉醒」卡（当前卡牌库中该类型全部卡牌） */
@@ -91,7 +99,9 @@ const Yogens = {
   },
 
   /* ---------- 银钥觉醒 ----------
-   * 门槛银钥≥1000（按钮口径），消耗可透支为负；每次置入手牌 1 张灵知觉醒 */
+   * 门槛银钥≥1000（按钮口径），消耗可透支为负；每次置入手牌 1 张灵知觉醒。
+   * 星辰篇·银钥觉醒（T48 璀璨银辉）：银钥能量满时可额外选择银钥觉醒，将指定唤醒体的灵知觉醒牌
+   * 置入手中并使其获得「保留」（本场战斗有效）；每回合只能触发 1 次，与「钥令」独立冷却 */
   awaken(cardId) {
     const b = State.battle;
     if (!b || b.phase !== "play") { Log.add('<span class="warn-text">银钥觉醒只能在我方出牌阶段使用</span>', "sys"); return false; }
@@ -99,11 +109,23 @@ const Yogens = {
     if (b.piles.hand.length >= Cards.HAND_LIMIT) { Log.add('<span class="warn-text">手牌已满，无法置入灵知觉醒</span>', "sys"); return false; }
     const card = State.getCard(cardId);
     if (!card || card.type !== "灵知觉醒") { Log.add('<span class="warn-text">请选择一张「灵知觉醒」</span>', "sys"); return false; }
+    if (State.starEnv && (b.silverAwakenThisTurn || 0) >= 1) {
+      Log.add('<span class="warn-text">⭐星辰篇：银钥觉醒每回合只能触发 1 次（与钥令独立冷却）</span>', "sys");
+      return false;
+    }
     const cost = this.awakenCost();
     b.silver -= cost;
-    b.silverAwakenCount = (b.silverAwakenCount || 0) + 1;
-    b.piles.hand.push(Cards.inst(cardId, false));
-    Log.add(`<b style="color:var(--gold)">🔓 银钥觉醒</b>：消耗 ${cost} 银钥（银钥 ${b.silver}${b.silver < 0 ? "，已透支" : ""}），「${card.name}」置入手牌；下次消耗 ${this.awakenCost()}（每获得 1 张翻倍）`, "sys");
+    if (State.starEnv) {
+      b.silverAwakenThisTurn = (b.silverAwakenThisTurn || 0) + 1;
+      const inst = Cards.inst(cardId, false);
+      inst.retainInst = true;   // 星辰篇：置入的灵知觉醒牌获得「保留」（本场战斗有效，回合末不弃）
+      b.piles.hand.push(inst);
+      Log.add(`<b style="color:var(--gold)">🔓 银钥觉醒（星辰篇）</b>：消耗 ${cost} 银钥（基础1000+键能超载1000×${b.allies.length} 名已解锁灵知觉醒者；银钥 ${b.silver}${b.silver < 0 ? "，已透支" : ""}），「${card.name}」置入手牌并获「保留」；本回合觉醒次数已用（每回合 1 次）`, "sys");
+    } else {
+      b.silverAwakenCount = (b.silverAwakenCount || 0) + 1;
+      b.piles.hand.push(Cards.inst(cardId, false));
+      Log.add(`<b style="color:var(--gold)">🔓 银钥觉醒</b>：消耗 ${cost} 银钥（银钥 ${b.silver}${b.silver < 0 ? "，已透支" : ""}），「${card.name}」置入手牌；下次消耗 ${this.awakenCost()}（每获得 1 张翻倍）`, "sys");
+    }
     State.notify();
     return true;
   },
@@ -213,7 +235,13 @@ const Yogens = {
         }
 
         case "energy":
-          b.energy = Math.min(10, b.energy + v);
+          /* 星辰篇·算力满盈（T48）：钥令加算力同样可超 12，超出转 300% 队伍平均银充的银钥 */
+          if (State.starEnv) {
+            b.energy += v;
+            State.clampEnergyStar();
+          } else {
+            b.energy = Math.min(10, b.energy + v);
+          }
           Log.add(`💫 获得 ${v} 点算力（当前 ${b.energy}）`, "good");
           break;
 

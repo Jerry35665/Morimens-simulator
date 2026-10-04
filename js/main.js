@@ -141,6 +141,8 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("keeper-input").value = State.keeperLv;
   if (saved.depths) State.depths = Object.assign(State.depths, saved.depths);
   State.carriedYogen = saved.carriedYogen || null;
+  State.starEnv = !!saved.starEnv;   // 星辰篇环境开关（T48，随存档恢复）
+  State.keeperYogenCount = saved.keeperYogenCount || 0;
   State.whale = !!saved.whale;
   if (State.whale) whaleBtn.classList.add("primary");
 

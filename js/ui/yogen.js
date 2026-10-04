@@ -15,7 +15,16 @@ const UIYogen = {
     let html = `<div class="m-row">银钥 <b>${b ? b.silver : "-"}</b>/1000 · 本回合已释放 <b>${casts}</b>/2 · 灵知觉醒已获得 <b>${awakenN}</b> 张（下次觉醒消耗 ${Yogens.awakenCost()}）
       · 携带：<b>${carried ? carried.name : '<span class="warn-text">未设置</span>'}</b></div>`;
     html += `<div class="m-row dim">规则（2026-09-28 实测）：银钥满 1000 点亮钥令按钮；每回合第 1 次只能释放<b>携带钥令</b>、第 2 次只能释放<b>尘封旧忆</b>（随机 3 选 1，每钥令每探索限 1 次、不含携带），不能第 3 次；1 次钥令消耗 1000 银钥。<b>银钥觉醒</b>置入 1 张「灵知觉醒」，每获得 1 张消耗翻倍（1000/2000/4000…），银钥可透支为负。</div>`;
-    html += `<div class="m-row dim">数值口径：护盾/生命/力量 = 物象研究深度×比例（现 ${State.depths.physical}）、中毒/反击/余烬 = 灵识深度×比例（现 ${State.depths.spirit}），向上取整。</div>`;
+
+    /* 星辰篇环境开关（T48）：「键能调和」三组 + 「璀璨银辉」三组（算力调和/算力满盈/狂气调和/
+     * 银钥觉醒每回合1次+保留/键能超载/归档刻痕）——非星辰篇关卡保持关闭 */
+    const effD = State.effDepths();
+    html += `<div class="m-row"><button class="btn ${State.starEnv ? "primary" : ""}" onclick="UIYogen.toggleStarEnv()">⭐ 星辰篇环境：${State.starEnv ? "开启中" : "关闭"}</button>
+      <span class="dim">（本期星辰篇关卡专用；键能调和/璀璨银辉六规则，详见 MECHANICS「星辰篇环境」行）</span></div>`;
+    if (State.starEnv) {
+      html += `<div class="m-row dim">⭐ 归档刻痕：守密人拥有钥令数 <input type="number" min="0" max="50" value="${State.keeperYogenCount || 0}" style="width:52px" onchange="State.keeperYogenCount=Math.max(0,Math.min(50,parseInt(this.value,10)||0));State.persist();UIYogen.panel()"> 个 → 物象/灵识深度 +${Math.min(50, State.keeperYogenCount || 0)}%（当前 物象 ${effD.physical}/灵识 ${effD.spirit}）；银钥觉醒=每回合1次、消耗 1000×(1+已解锁灵知觉醒人数)、置入牌获「保留」；算力满盈>12 转 300% 平均银充；狂气调和爆发+10狂气/回合末未爆发转 200% 平均银充。</div>`;
+    }
+    html += `<div class="m-row dim">数值口径：护盾/生命/力量 = 物象研究深度×比例（现 ${State.depths.physical}${State.starEnv ? ` → 归档后 ${effD.physical}` : ""}）、中毒/反击/余烬 = 灵识深度×比例（现 ${State.depths.spirit}${State.starEnv ? ` → 归档后 ${effD.spirit}` : ""}），向上取整。</div>`;
 
     /* 释放区 */
     if (b && b.phase === "play" && b.silver >= Yogens.BASE_COST) {
@@ -59,6 +68,14 @@ const UIYogen = {
   setCarried(id) {
     State.setCarriedYogen(id);
     this.panel();   // 同名弹窗原位刷新（保持滚动）
+  },
+
+  /* 星辰篇环境开关（T48）：随存档持久化；切换后原位刷新面板 */
+  toggleStarEnv() {
+    State.starEnv = !State.starEnv;
+    State.persist();
+    Log.add(`⭐ 星辰篇环境 ${State.starEnv ? "开启——键能调和（算力调和/算力满盈/狂气调和）+璀璨银辉（银钥觉醒每回合1次+保留/键能超载/归档刻痕）已生效" : "关闭"}`, "sys");
+    this.panel();
   },
 
   castCarried() {

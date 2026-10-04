@@ -54,6 +54,8 @@ const State = {
       data.whale = !!this.whale;
       data.carriedYogen = this.carriedYogen || null;   // 携带钥令（账号级配置）
       data.usedYogensExplore = this.usedYogensExplore || [];   // 尘封旧忆本探索已用（T12，随存档跨刷新）
+      data.starEnv = !!this.starEnv;                   // 星辰篇环境开关（T48，随存档跨刷新）
+      data.keeperYogenCount = this.keeperYogenCount || 0;   // 归档刻痕输入（T48）
       data.chars = data.chars || {};
       for (const a of (this.battle ? this.battle.allies : [])) {
         data.chars[a.def.id] = {
@@ -84,6 +86,8 @@ const State = {
     this.usedYogensExplore = Array.isArray(saved.usedYogensExplore) ? saved.usedYogensExplore : [];
     if (saved.depths) this.depths = Object.assign(this.depths, saved.depths);
     this.carriedYogen = saved.carriedYogen || null;
+    this.starEnv = !!saved.starEnv;
+    this.keeperYogenCount = saved.keeperYogenCount || 0;
     this.whale = !!saved.whale;
     if (this.battle) this.newBattle();   // 编队随档清空（保存配置在下次 addAlly 时套用）
     Log.add(`💾 已切换到存档槽「${name}」（编队已清空，唤醒体按该档保存配置重新添加）`, "good");
@@ -573,6 +577,65 @@ const State = {
   silverPerCost(level) { return Math.round(this._curveValue(this.SILVER_CURVE, level)); },
   rechargeBonus(level) { return Math.round(this._curveValue(this.RECHARGE_CURVE, level)); },
 
+  /* ===================== 星辰篇环境（T48，2026-10-05 实装） =====================
+   * 源：「关卡篇章效果说明」截图（造物与刻印/ 文件夹前段），全文录 docs/MECHANICS.md */
+
+  /* 归档刻痕（璀璨银辉）：守密人每拥有 1 个钥令 → 物象/灵识研究深度 +1%（至多 50%），仅星辰篇生效。
+   * 钥令数值口径（Yogens.val）经此取深度；R 命轮效果变更（维度影像造物出现率）未建模——造物系统 T50 */
+  effDepths() {
+    const bonus = this.starEnv ? 1 + Math.min(50, this.keeperYogenCount || 0) / 100 : 1;
+    return {
+      live: this.depths.live,
+      physical: Math.round((this.depths.physical || 0) * bonus),
+      spirit: Math.round((this.depths.spirit || 0) * bonus)
+    };
+  },
+
+  /* 队伍平均银钥充能（算力满盈 300% / 狂气调和 200% 的转化基数） */
+  avgSilverCharge() {
+    const b = this.battle;
+    if (!b || !b.allies.length) return 0;
+    return b.allies.reduce((s, a) => s + ((a.stats && a.stats.silverKeyCharge) || 0), 0) / b.allies.length;
+  },
+
+  /* 算力满盈：战斗中当前算力 > 12 时，超出的每点 → 300% 队伍平均银充的银钥能量。
+   * 所有加算力的路径（卡牌 energy op / 钥令 energy op）在星辰篇调用；沙盒手改不触发 */
+  clampEnergyStar() {
+    const b = this.battle;
+    if (!b || !this.starEnv || (b.energy || 0) <= 12) return 0;
+    const over = b.energy - 12;
+    b.energy = 12;
+    const per = Math.round(3 * this.avgSilverCharge());
+    const gain = per * over;
+    b.silver += gain;
+    Log.add(`⭐ 算力满盈：算力 ${12 + over} > 12，超出 ${over} 点 → 银钥 +${gain}（300%×平均银充 ${this.avgSilverCharge().toFixed(1)}=${per}/点）`, "good");
+    return gain;
+  },
+
+  /* 死亡抵抗（T48②）：队伍受致命伤（hp 将 ≤0）时 roll 队伍死抗总和%（>100 按 100 封顶）。
+   * 成功 → hp=1 存活 + 此后概率减半（deathResistChance 半衰）；失败 → hp 保持 0 由 checkEnd 判负。
+   * 挂点=Damage.applyRawDamage 的 ally 分支（deal/中毒/余烬/触腕等所有伤害路径的统一落账口）。
+   * 触发时依次调用 State.DEATH_RESIST_HOOKS（茉夏灵塑「触发死亡抵抗后获 50 狂气」等联动用） */
+  tryDeathResist() {
+    const b = this.battle;
+    if (!b || b.team.hp > 0 || b.phase === "over") return false;
+    const resist = Math.min(100, this.teamStats().deathResist || 0);
+    if (resist <= 0) return false;
+    b.deathResistChance = (b.deathResistChance != null) ? b.deathResistChance : 1;
+    const chance = resist * b.deathResistChance;
+    if (Math.random() * 100 < chance) {
+      b.team.hp = 1;
+      b.deathResistChance /= 2;
+      Log.add(`<b style="color:var(--gold)">✨ 死亡抵抗触发！</b>队伍免于败北，保留 1 点生命（死抗 ${resist}%×系数${b.deathResistChance * 2} → 此后概率减半为 ×${b.deathResistChance}）`, "good");
+      if (window.UIBoard) UIBoard.floatTeam("✨死亡抵抗", "heal");
+      for (const h of (this.DEATH_RESIST_HOOKS || [])) { try { h(); } catch (e) { /* 钩子异常不阻断 */ } }
+      return true;
+    }
+    Log.add(`<span class="warn-text">死亡抵抗判定失败（死抗 ${resist}% × 系数 ${b.deathResistChance}）</span>`, "sys");
+    return false;
+  },
+  /* ===================== 星辰篇环境结束 ===================== */
+
   /* 队伍生命上限 = Σ唤醒体体质 × 活体研究深度 ÷ 100（向上取整）
    * 物象/灵识深度暂只作记录（造物/固定效果缩放待实现） */
   syncTeamHp() {
@@ -626,6 +689,12 @@ const State = {
   keeperLv: 1,     // 守密人等级（顶栏输入，本地保存）
   carriedYogen: null,  // 携带钥令 id（探索前设置，账号级配置，本地保存）
   usedYogensExplore: [],  // 本探索经尘封旧忆释放过的钥令（T12：跨战斗持久，重开一把/主页重置才清）
+  /* ---- 星辰篇环境（T48，源图=造物与刻印/「关卡篇章效果说明」2026-10-05）----
+   * starEnv=true 时启用「键能调和」（算力调和/算力满盈/狂气调和）与「璀璨银辉」
+   * （银钥觉醒每回合1次+保留/键能超载/归档刻痕）；开关在钥令面板切换（非星辰关卡保持关闭） */
+  starEnv: false,
+  keeperYogenCount: 0,    // 归档刻痕输入：守密人拥有的钥令数（0~50，仅星辰篇生效）
+  DEATH_RESIST_HOOKS: [], // 死亡抵抗触发钩子（茉夏灵塑「触发后获50狂气」等联动用，静态注册不进快照）
   /* 三种研究深度（官方截图示例值；活体决定体质→队伍生命转化强度，可编辑）
    * 物象/灵识还决定钥令数值：护盾/生命/力量×物象、中毒/反击/余烬×灵识（2026-09-28 实测破解） */
   depths: { live: 270, physical: 1032, spirit: 3694 },
@@ -655,6 +724,12 @@ const State = {
       starBless: 0,                             // 星辰庇佑层数（群星的庇佑，上限5）
       poemUsed: [],                             // 春天的献诗已选诗页
       delayed: [],                              // 延迟效果（下回合开始护盾等）：{v,label}
+      /* ---- 星辰篇环境（T48）---- */
+      energyTune: 0,                            // 算力调和层数（本回合出牌>10 张后每张+1；后续出牌算力消耗+1）
+      playedThisTurn: 0,                        // 本回合已打出指令卡数（算力调和触发计数）
+      burstUsedThisTurn: [],                    // 本回合已释放狂气爆发的 uid（狂气调和回合末未爆发→银钥）
+      silverAwakenThisTurn: 0,                  // 星辰篇银钥觉醒每回合 1 次计数
+      deathResistChance: 1,                     // 死亡抵抗当前概率系数（触发一次 ×1/2，startBattle 重置）
       result: null
     };
     this.notify();

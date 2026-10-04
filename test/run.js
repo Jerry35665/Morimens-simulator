@@ -2057,6 +2057,146 @@ function runAllTests() {
       pt ? (pt.getAttribute("title") || "").slice(0, 40) + "…" : "(无元素)");
   }
 
+  console.log("== 8.34 T48 星辰篇环境 + 死亡抵抗（2026-10-05）==");
+  {
+    /* Math.random stub：死亡抵抗概率判定需要确定性（0=必成功、0.999999=必失败） */
+    const realRandom = Math.random;
+    DBF.relicDeck = [];   // 清默认造物（怪蛇残蜕死抗+8 会污染死亡抵抗断言）
+    State.reset();
+    State.newBattle();
+    const sr = State.addAlly("char_rotan", 1);
+    const sd = State.addAlly("char_doll", 1);
+    const so = State.addAlly("char_ogilvy", 1);
+    const sp = State.addAlly("char_ramona", 1);
+    State.addEnemy("enemy_dummy");
+    State.setCarriedYogen("yg_inject_guard");
+    /* --- 死亡抵抗 --- */
+    sr.stats.deathResist = 0; sd.stats.deathResist = 0; so.stats.deathResist = 0; sp.stats.deathResist = 0;
+    Turn.startBattle();
+    const sb = State.battle;
+    sb.silver = 0;
+    check("死亡抵抗: 队伍死抗和=0 直接判负不触发", (() => {
+      Math.random = () => 0;   // 就算必成功也不该触发（resist=0 早退）
+      sb.team.hp = 10;
+      Damage.applyRawDamage(sr, 50, "t");
+      Math.random = realRandom;
+      return sb.team.hp === 0 && sb.phase === "play";   // hp=0 但尚未 checkEnd（checkEnd 在 deal/checkEnd 调用点判）
+    })());
+    check("死亡抵抗: checkEnd 判负正常", (() => { Turn.checkEnd(); return sb.phase === "over" && sb.result === "lose"; })());
+    /* 重开：死抗 100% */
+    State.reset(); State.newBattle();
+    const r2d = State.addAlly("char_rotan", 1);
+    State.addEnemy("enemy_dummy");
+    r2d.stats.deathResist = 100;
+    Turn.startBattle();
+    const db = State.battle;
+    Math.random = () => 0;   // 必成功
+    db.team.hp = 10;
+    Damage.applyRawDamage(r2d, 999, "致命");
+    Math.random = realRandom;
+    check("死亡抵抗: 100%必存活且 hp=1", db.team.hp === 1 && db.phase === "play", "hp:" + db.team.hp);
+    check("死亡抵抗: 触发后概率系数减半", db.deathResistChance === 0.5, "系数:" + db.deathResistChance);
+    check("死亡抵抗: 二次触发按 50%（stub 失败→hp=0）", (() => {
+      Math.random = () => 0.999999;   // 必失败
+      db.team.hp = 5;
+      Damage.applyRawDamage(r2d, 99, "致命2");
+      Math.random = realRandom;
+      return db.team.hp === 0;
+    })());
+    check("死亡抵抗: startBattle 重置系数", (() => {
+      db.phase = "prep"; db.result = null; db.team.hp = db.team.maxHp;
+      Turn.startBattle();
+      return db.deathResistChance === 1;
+    })());
+    check("死亡抵抗: 触发钩子被调用", (() => {
+      let hit = 0;
+      const h = () => hit++;
+      State.DEATH_RESIST_HOOKS.push(h);
+      Math.random = () => 0;
+      db.team.hp = 3;
+      Damage.applyRawDamage(r2d, 66, "钩子");
+      Math.random = realRandom;
+      State.DEATH_RESIST_HOOKS = State.DEATH_RESIST_HOOKS.filter(x => x !== h);
+      return hit === 1 && db.team.hp === 1;
+    })());
+
+    /* --- 星辰篇环境 --- */
+    State.reset(); State.newBattle();
+    const tx = State.addAlly("char_rotan", 1);   // 银充基线 15
+    State.addEnemy("enemy_dummy");
+    State.setCarriedYogen("yg_inject_guard");
+    State.starEnv = true;
+    Turn.startBattle();
+    const zb = State.battle;
+    check("星辰篇: 归档刻痕默认不加成", State.effDepths().physical === State.depths.physical);
+    State.keeperYogenCount = 50;
+    check("星辰篇: 归档刻痕 50 钥令 → 深度 ×1.5", State.effDepths().physical === Math.round(State.depths.physical * 1.5)
+      && State.effDepths().spirit === Math.round(State.depths.spirit * 1.5));
+    check("星辰篇: 钥令数值随归档深度缩放", Yogens.val({ p: 10 }) === Math.ceil(State.depths.physical * 1.5 * 10 / 100));
+    State.keeperYogenCount = 0;
+    /* 算力调和：本回合已出 10 张+1 层 → 下张 1 费卡实际扣 2、银钥额外 +银充×1 */
+    zb.playedThisTurn = 10; zb.energyTune = 1;
+    zb.energy = 9; zb.silver = 0;
+    Cards.generate("card_rotan_hunger");   // 1 费
+    const th = zb.piles.hand.find(c => c.defId === "card_rotan_hunger");
+    Cards.play(th.uid, null);
+    check("星辰篇·算力调和: 1费卡实扣 1+1层=2", zb.energy === 7, "energy:" + zb.energy);
+    check("星辰篇·算力调和: 额外1点算力→100%银充(15)银钥", zb.silver === Math.round(State.silverPerCost(15) * 1) + 15,
+      "silver:" + zb.silver + "（查表 " + State.silverPerCost(15) + " + 调和15）");
+    check("星辰篇·算力调和: 打出后已>10张再获1层", zb.energyTune === 2, "层:" + zb.energyTune);
+    /* 算力满盈：energy>12 转化 */
+    zb.energy = 15;
+    const silverBefore = zb.silver;
+    const perExp = Math.round(3 * State.avgSilverCharge());
+    State.clampEnergyStar();
+    check("星辰篇·算力满盈: 15>12 → 钳到12、超出3点转银钥", zb.energy === 12 && zb.silver - silverBefore === perExp * 3,
+      `+${zb.silver - silverBefore}（${perExp}/点×3）`);
+    /* 狂气调和：爆发 +10 基础狂气 + 记录；回合末未爆发 → 银钥 */
+    tx.guku = 100;
+    Cards.releaseBurst(tx);
+    const rcLv = tx.stats.gukuRecharge || 0;
+    check("星辰篇·狂气调和: 爆发后基础狂气+10（清零→回冲[仅狂充>0]→+10）", tx.guku === 10 + (rcLv > 0 ? State.rechargeBonus(rcLv) : 0),
+      "guku:" + tx.guku + " rc:" + rcLv);
+    check("星辰篇·狂气调和: 爆发记录在案", (zb.burstUsedThisTurn || []).includes(tx.uid));
+    zb.silver = 0;
+    Turn.endTurn();
+    check("星辰篇·狂气调和: 回合末 0 名未爆发 → 无银钥", zb.silver === 0, "silver:" + zb.silver);
+    /* 未爆发场景：再过一回合（无人爆发→1人队全转） */
+    const avg = State.avgSilverCharge();
+    const expGain = Math.round(2 * avg) * 1;
+    zb.silver = 0;
+    Turn.endTurn();
+    check("星辰篇·狂气调和: 回合末 1 名未爆发 → 银钥 +200%平均银充×1", zb.silver === expGain,
+      "silver:" + zb.silver + "（预期" + expGain + "）");
+    /* 键能超载 + 每回合1次 + 保留 */
+    zb.silver = 5000;
+    check("星辰篇·键能超载: 觉醒消耗=1000×(1+1人)=2000", Yogens.awakenCost() === 2000, "cost:" + Yogens.awakenCost());
+    const handN0 = zb.piles.hand.length;
+    check("星辰篇·银钥觉醒: 首次成功置入", Yogens.awaken("card_rc_sustain") === true && zb.piles.hand.length === handN0 + 1);
+    check("星辰篇·银钥觉醒: 置入牌获「保留」（实例级）", zb.piles.hand[zb.piles.hand.length - 1].retainInst === true);
+    check("星辰篇·银钥觉醒: 每回合第2次被拒", Yogens.awaken("card_rc_sustain") === false);
+    Turn.endTurn();
+    zb.silver = 5000;
+    check("星辰篇·银钥觉醒: 新回合计数重置可再觉醒", (zb.silverAwakenThisTurn || 0) === 0 && Yogens.awaken("card_rc_sustain") === true);
+    /* 保留：手牌里的 retainInst 牌回合末不弃 */
+    Turn.endTurn();
+    check("星辰篇·银钥觉醒: 置入牌跨回合保留在手", zb.piles.hand.some(c => c.retainInst === true));
+    /* 快照/回溯带星辰字段 */
+    zb.energyTune = 3; zb.playedThisTurn = 13;
+    Turn.snapshotTurn();
+    const snap = zb.history[zb.history.length - 1];
+    check("星辰篇: 快照携带调和/抵抗字段", snap.star && snap.star.energyTune === 3 && snap.star.playedThisTurn === 13);
+    zb.energyTune = 0; zb.playedThisTurn = 0;
+    Turn.restoreState(snap);
+    check("星辰篇: 回溯还原调和层数", zb.energyTune === 3 && zb.playedThisTurn === 13);
+    /* 关闭环境回落常规口径 */
+    State.starEnv = false; State.keeperYogenCount = 50;
+    check("星辰篇关闭: 归档刻痕不再生效", State.effDepths().physical === State.depths.physical);
+    check("星辰篇关闭: 觉醒消耗回落翻倍口径", Yogens.awakenCost() === 1000 * Math.pow(2, zb.silverAwakenCount));
+    State.keeperYogenCount = 0;
+    State.starEnv = false;
+  }
+
   renderSummary();
 }
 
