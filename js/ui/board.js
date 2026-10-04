@@ -61,7 +61,7 @@ const UIBoard = {
     }
 
     /* T46 本地立绘：data/personal/portraits/<角色名>.jpg|png（personal 在 .gitignore，不入库）；加载失败回落文字样式 */
-    const portrait = `<div class="u-portrait" data-name="${u.def.name.slice(0, 1)}"><img src="data/personal/portraits/${encodeURIComponent(u.def.name)}.jpg" alt=""
+    const portrait = `<div class="u-portrait" data-name="${u.def.name.slice(0, 1)}" title="头像位：未设置立绘时显示角色首字。把立绘截图命名为「角色名.jpg 或 .png」放入 data/personal/portraits/ 目录，刷新页面即自动显示（该目录不入公开仓库）。详情点右侧菜单 🖼 按钮"><img src="data/personal/portraits/${encodeURIComponent(u.def.name)}.jpg" alt=""
       onerror="if(!this.dataset.png){this.dataset.png=1;this.src='data/personal/portraits/${encodeURIComponent(u.def.name)}.png';}else{this.parentNode.classList.add('no-img');this.remove();}"></div>`;
     let html = `${portrait}<div class="u-head">
       <span class="u-name">${u.def.name}</span>

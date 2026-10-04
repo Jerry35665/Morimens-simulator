@@ -2038,6 +2038,18 @@ function runAllTests() {
     State.switchSaveSlot("原版·个人");   // 保持默认档，不留测试态
   }
 
+  console.log("== 8.33 头像占位说明（T46 追加）==");
+  {
+    State.newBattle();
+    State.addAlly("char_doll", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const pt = document.querySelector(".u-portrait");
+    check("T46 头像占位带说明（title 含立绘指引）",
+      !!pt && (pt.getAttribute("title") || "").includes("立绘") && (pt.getAttribute("title") || "").includes("portraits"),
+      pt ? (pt.getAttribute("title") || "").slice(0, 40) + "…" : "(无元素)");
+  }
+
   renderSummary();
 }
 
