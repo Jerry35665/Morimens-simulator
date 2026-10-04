@@ -531,10 +531,56 @@ const UIGear = {
   },
 
   /* ================= 队伍属性面板 ================= */
+  /* SKey @@编队分享码（T43）：粘贴导入（预览→确认放置）/ 复制当前编队 */
+  importShareCode() {
+    const raw = prompt("粘贴 SKey @@编队分享码（游戏内编队界面生成，@@ 开头 @@ 结尾）：", "");
+    if (!raw) return;
+    const r = ShareCode.decode(raw);
+    if (r.error) { Log.add(`✗ 编队码解析失败：${r.error}`, "sys"); return; }
+    const lines = r.slots.map((s2, i) => `${i + 1}. ${s2.name}${s2.found ? "" : "（⚠库中无此角色，跳过）"}`).join("；");
+    const missing = r.slots.filter(s2 => !s2.found).length;
+    if (missing === r.slots.length) { Log.add("✗ 编队码无任何可导入角色", "sys"); return; }
+    if (!confirm(`编队码解析结果：
+${lines}
+
+确认后按 60 级放置（@@码不含等级）；现有队伍将被替换。继续？`)) return;
+    if (State.battle && State.battle.phase !== "prep") { Log.add("✗ 战斗开始后不能更换队伍，请重置", "sys"); return; }
+    if (!State.battle) State.newBattle();
+    State.battle.allies = [];
+    let placed = 0;
+    for (const s2 of r.slots) {
+      if (!s2.found) continue;
+      const def = (DBF.characters || []).find(c => c.name === s2.name);
+      if (!def) continue;
+      const u = State.addAlly(def.id, 60);
+      if (u) { u.level = 60; State.recalcAllyStats(u); placed += 1; }   // @@码不含等级：强制 60（addAlly 会套用旧保存配置）
+    }
+    Log.add(`📥 编队码导入完成：放置 ${placed} 名唤醒体（60级，命轮/密契不随码）`, "good");
+    State.notify();
+  },
+
+  copyShareCode() {
+    const b = State.battle;
+    const allies = b ? b.allies : [];
+    if (!allies.length) { Log.add("✗ 当前没有编队可复制", "sys"); return; }
+    const code = ShareCode.encode(allies);
+    const done = () => Log.add(`📋 编队码已复制：${code}（命轮/密契/等级不随码——@@码格式不含）`, "good");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(done, () => { prompt("复制以下编队码：", code); done; });
+    } else {
+      prompt("复制以下编队码：", code);
+      done();
+    }
+  },
+
   openTeamStats() {
     const s = State.teamStats();
     const depths = State.researchDepths();
-    let html = `<div class="m-row dim">队伍属性：界域精通=各角色之和（攻略口径）；伤害强效/黑印/死抗=均值+造物（口径待确认）：</div>
+    let html = `<div class="m-row">
+      <button class="btn" onclick="UIGear.importShareCode()">📥 粘贴编队码</button>
+      <button class="btn" onclick="UIGear.copyShareCode()">📋 复制编队码</button>
+      <span class="dim">SKey @@码：游戏内编队界面生成；只导角色（60级），命轮/密契格式不支持不硬塞</span></div>
+      <div class="m-row dim">队伍属性：界域精通=各角色之和（攻略口径）；伤害强效/黑印/死抗=均值+造物（口径待确认）：</div>
       <table class="mech-table"><tr><th>界域精通</th><th>伤害强效</th><th>黑印掉落</th><th>死亡抵抗</th><th>禁忌学识等级</th></tr>
       <tr><td>${s.realmMastery}</td><td>${s.damageBoost}%</td><td>${s.blackImprint}%</td><td>${s.deathResist}%</td><td>${s.tabooKnowledge}</td></tr></table>
       <div class="m-row dim">银钥能量：${State.battle ? State.battle.silver : 0}/1000（满1000释放钥令）</div>

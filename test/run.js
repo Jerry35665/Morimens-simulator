@@ -1859,6 +1859,113 @@ function runAllTests() {
       && T("card_dafdel_tide").includes("易伤所有敌人"));
   }
 
+  /* ---- T42 衍生卡四件补全（2026-10-03 用户口述定案）---- */
+  console.log("== 8.29 T42 衍生卡批 ==");
+  {
+    /* ① 警觉：无效果死卡——打出不抛错、进消耗 */
+    State.newBattle();
+    const rA = State.addAlly("char_doll", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const bA = State.battle;
+    Cards.generate("shared_alert");
+    const al = bA.piles.hand.find(c => c.defId === "shared_alert");
+    Cards.play(al.uid, null);
+    check("T42① 警觉 打出=空效果（不抛错+进消耗）",
+      bA.piles.exhaust.some(c => c.defId === "shared_alert") && bA.team.hp > 0);
+    /* ② 巨剑·鲸落：短刃噬第3打置旗→同回合长刃变鲸落回手→跨回合保留 */
+    State.newBattle();
+    const rB = State.addAlly("char_rotan_cetarchon", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const bB = State.battle;
+    bB.energy = 9;
+    Cards.generate("card_rc_bite");
+    const biteInst = bB.piles.hand.filter(c => c.defId === "card_rc_bite").pop();   // 固定同一实例（洗回未建模：从弃牌堆捞回，playCount 累计）
+    for (let i = 0; i < 3; i++) {
+      if (!bB.piles.hand.includes(biteInst)) { bB.piles.discard = bB.piles.discard.filter(c => c !== biteInst); bB.piles.hand.push(biteInst); }
+      Cards.play(biteInst.uid, bB.enemies[0].uid);
+    }
+    check("T42② 短刃·噬第3次打出→合成旗置位", bB.whaleFuseReady === true);
+    Cards.generate("card_rc_fallen");
+    bB.energy = 9;
+    Cards.play(bB.piles.hand.find(c => c.defId === "card_rc_fallen").uid, null);
+    const whale = bB.piles.hand.find(c => c.defId === "card_rc_whale");
+    check("T42② 同回合打出长刃·陨→变鲸落回手（不进弃牌堆）",
+      !!whale && !bB.piles.discard.some(c => c.defId === "card_rc_whale"));
+    Turn.endTurn();
+    check("T42② 鲸落跨回合保留在手中", bB.piles.hand.some(c => c.defId === "card_rc_whale"));
+    bB.phase = "play";
+    Cards.generate("card_rc_fallen");
+    bB.energy = 9;
+    Cards.play(bB.piles.hand.find(c => c.defId === "card_rc_fallen").uid, null);
+    check("T42② 新回合无旗→长刃正常进弃牌（不误合成）",
+      bB.piles.discard.some(c => c.defId === "card_rc_fallen"));
+    /* ③ 超级大集结：建卡+用户原话 notes */
+    const mr = DBF.cards.find(c => c.id === "card_jenkin_mega_rally");
+    check("T42③ 超级大集结! 在库+notes 带用户原话+基数待确认",
+      !!mr && (mr.notes || "").includes("+10伤害次数") && (mr.notes || "").includes("待确认"));
+    /* ④ 自毁改造·终末：choicesAll 直出双分支无弹窗+双效果齐发 */
+    State.newBattle();
+    const rC = State.addAlly("char_doll_inferno", 70);
+    rC.fatewheels = []; rC.fwStacks = [0, 0]; rC.pacts = [];
+    rC.pactDetails = [null, null, null, null, null, null]; rC.pactSetBound = {};
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const bC = State.battle;
+    Cards.generate("card_di_reform_t");
+    bC.energy = 9;
+    Cards.play(bC.piles.hand.find(c => c.defId === "card_di_reform_t").uid, null);
+    check("T42④ 终末=兴奋+诅咒同时生效（无弹窗直出）",
+      rC.buffs.some(x => x.defId === "buff_boost_up")
+      && bC.enemies[0].buffs.some(x => x.defId === "debuff_strength_down"));
+  }
+
+  /* ---- T43 SKey @@编队分享码（2026-10-03）：decode 角色映射/往返自洽/缺角色回落 ---- */
+  console.log("== 8.30 T43 分享码批 ==");
+  {
+    check("T43 token 字典 61 条且无重复 token",
+      ShareCode.TOKENS.length === 61
+      && new Set(ShareCode.TOKENS.map(t => t.token)).size === 61);
+    /* 用本库角色现算一条真实码（朵尔+奥吉尔+2 空位），验证 decode↔encode 往返 */
+    State.newBattle();
+    State.addAlly("char_doll", 60);
+    State.addAlly("char_ogilvy", 60);
+    const codeT = ShareCode.encode(State.battle.allies);
+    check("T43 encode：朵尔+奥吉尔→@@码（2角色+2空位+13装备空位=21字符）",
+      codeT.startsWith("@@") && codeT.endsWith("@@") && codeT.length === 21
+      && codeT[2] !== "a" && codeT[3] !== "a" && codeT.slice(4, 17) === "a".repeat(13),
+      codeT);
+    const dec = ShareCode.decode(codeT);
+    check("T43 decode：解析回 朵尔/奥吉尔+2空位（found 命中）",
+      !dec.error && dec.slots.length === 4
+      && dec.slots[0].found && dec.slots[0].name === "朵尔"
+      && dec.slots[1].found && dec.slots[1].name === "奥吉尔"
+      && dec.slots[2].token === "a" && dec.slots[3].token === "a");
+    const reEnc = ShareCode.encode([]);   // 空编队 → 全 a
+    check("T43 往返自洽：decode(encode(x)) 再 encode 稳定",
+      ShareCode.encode(dec.slots.map(s => s.found ? { def: { name: s.name } } : null)) === codeT
+      && reEnc === "@@" + "a".repeat(17) + "@@");
+    check("T43 缺角色回落：未知 token → found=false 不导入",
+      (() => {
+        const bad = "@@zzzz" + "a".repeat(12) + "z@@";
+        const d = ShareCode.decode(bad);
+        return !d.error && d.slots.every(s => !s.found) && d.warnings.length >= 1;
+      })());
+    /* 导入放置：decode→addAlly 60 级 */
+    State.newBattle();
+    const d30 = ShareCode.decode(codeT);
+    let placed30 = 0;
+    for (const s of d30.slots) {
+      if (!s.found) continue;
+      const def = (DBF.characters || []).find(c => c.name === s.name);
+      if (def) { const u = State.addAlly(def.id, 60); if (u) { u.level = 60; State.recalcAllyStats(u); placed30 += 1; } }
+    }
+    check("T43 导入放置：2 名 60 级唤醒体落位",
+      placed30 === 2 && State.battle.allies.length === 2
+      && State.battle.allies.every(a => a.level === 60));
+  }
+
   renderSummary();
 }
 

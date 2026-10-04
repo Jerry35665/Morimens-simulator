@@ -133,10 +133,13 @@ const Cards = {
     const inst = b.piles.hand.find(c => c.uid === uid);
     if (!inst) return;
     const card = this.def(inst);
-    /* 选择分支：未带 choiceIdx 时交回 UI 弹窗，选择后重入（⚠ UIHand 是顶层 const，不在 window 上，必须用 typeof 探测） */
+    /* 选择分支：未带 choiceIdx 时交回 UI 弹窗，选择后重入（⚠ UIHand 是顶层 const，不在 window 上，必须用 typeof 探测）
+     * choicesAll（T42④ 自毁改造·终末）：绕过弹窗直出全部分支 */
     if (card.choices && card.choices.length && choiceIdx == null) {
-      if (typeof UIHand !== "undefined" && UIHand.showChoices) { UIHand.showChoices(inst.uid, card); return; }
-      choiceIdx = 0;   // 无 UI 环境（测试/沙盒）取第一分支
+      if (card.choicesAll) {
+        choiceIdx = -1;
+      } else if (typeof UIHand !== "undefined" && UIHand.showChoices) { UIHand.showChoices(inst.uid, card); return; }
+      else choiceIdx = 0;   // 无 UI 环境（测试/沙盒）取第一分支
     }
     const owner = b.allies.find(a => a.def.id === card.owner) || b.allies[0];
     if (!owner) { alert("场上没有我方单位"); return; }
@@ -187,11 +190,17 @@ const Cards = {
 
     /* 魔女宽檐帽首卡判定（T8）：本回合第一张指令卡标记在结算后置位——结算中的 compute 读到 false 即首卡 */
     const wasFirstCard = b.firstCardPlayed === false;
-    /* 选择分支（自毁改造等 choices 卡，choiceIdx 由弹窗回传）/ 姿态分支（螺湮圆舞按当前触腕姿态）——T32 实测批 */
+    /* 选择分支（自毁改造等 choices 卡，choiceIdx 由弹窗回传）/ 姿态分支（螺湮圆舞按当前触腕姿态）——T32 实测批
+     * choicesAll（T42④ 自毁改造·终末）：绕过弹窗同时触发全部分支 */
     let effList = (inst.upgraded && card.upgrade ? card.upgrade.effects : card.effects);
-    if (card.choices && card.choices.length && choiceIdx != null && card.choices[choiceIdx]) {
-      effList = card.choices[choiceIdx].effects || [];
-      Log.add(`↪ 选择「${card.choices[choiceIdx].name}」`, "sys");
+    if (card.choices && card.choices.length && choiceIdx != null) {
+      if (choiceIdx === -1) {
+        effList = card.choices.flatMap(c => c.effects || []);
+        Log.add(`↪ 终末：同时触发「${card.choices.map(c => c.name).join("」「")}」`, "sys");
+      } else if (card.choices[choiceIdx]) {
+        effList = card.choices[choiceIdx].effects || [];
+        Log.add(`↪ 选择「${card.choices[choiceIdx].name}」`, "sys");
+      }
     }
     if (card.stances && typeof Tentacle !== "undefined" && b.tentacle) {
       const branch = card.stances[b.tentacle.stance] || [];
@@ -212,6 +221,11 @@ const Cards = {
     /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
     if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
     inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
+    /* 巨剑·鲸落合成旗（T42②）：短刃·噬每第 3 次打出 → 本回合下次「长刃·陨」合成鲸落（同回合语义，endTurn 清旗） */
+    if (card.whaleFuse && inst.playCount % 3 === 0 && !b.whaleFuseReady) {
+      b.whaleFuseReady = true;
+      Log.add(`⚓ 短刃·噬 第 ${inst.playCount} 次打出：本回合下次打出「长刃·陨」时合成「巨剑·鲸落」`, "good");
+    }
     /* 变身（T38 D）：transformAfter.plays 次后变为 into（鲜血链条3次→嗜血链球）；无 plays=打出即变回 */
     const tr = card.transformAfter;
     if (tr && (!tr.plays || inst.playCount >= tr.plays)) {
@@ -219,12 +233,24 @@ const Cards = {
       inst.playCount = 0;
       Log.add(`⇄ ${card.name} 变为「${this.def(inst).name}」${tr.plays ? `（已打出 ${tr.plays} 次）` : ""}`, "sys");
     }
+    /* 巨剑·鲸落合成（T42②，用户定案）：短刃·噬第3次打出的同回合打出长刃·陨 → 长刃变鲸落回手，
+     * 跨回合保留（card_rc_whale.retain）；鲸落持有机制（敌增伤25%/指令卡变蚀灭）仍未建模 */
+    let synthWhale = false;
+    if (b.whaleFuseReady && card.id === "card_rc_fallen") {
+      inst.defId = "card_rc_whale";
+      inst.playCount = 0;
+      b.whaleFuseReady = false;
+      synthWhale = true;
+      Log.add(`⚓ 「长刃·陨」合成「巨剑·鲸落」！强制保留在手中`, "good");
+    }
     /* 回响（T38 D，MECHANICS 术语行）：打出后回到手牌。「刻印失效」用户 2026-10-03 定案=按没有刻印
      * 实现、属性一致——模拟器未建模卡牌刻印，故无数值影响。
      * 变身对（鲜血链条↔嗜血链球）：打出形态或变后形态任一有回响即入手牌——链条3打变身成球仍回手、
      * 球打出变回链条随链条回响回手 */
     const afterTr = this.def(inst);
-    if ((card.echo || afterTr.echo) && !inst.forceExhaust) {
+    if (synthWhale) {
+      this._move(uid, "hand");
+    } else if ((card.echo || afterTr.echo) && !inst.forceExhaust) {
       this._move(uid, "hand");
       Log.add(`↩ 回响：${afterTr.name} 回到手牌`, "sys");
     } else {

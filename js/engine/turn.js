@@ -52,6 +52,7 @@ const Turn = {
     b.yogenCastsThisTurn = 0;   // 钥令每回合释放次数重置（第1次携带/第2次尘封旧忆）
     b.firstCardPlayed = false;  // 魔女宽檐帽首卡标记重置（T8）
     b.strikesPlayed = 0;        // discPerStrike 打击计数重置（T32 实测批；T38 C 改全队共享数值型）
+    b.whaleFuseReady = false;   // 巨剑·鲸落合成旗：同回合语义，跨回合失效（T42②）
     if (typeof Tentacle !== "undefined") Tentacle.onTurnStart();   // 触腕姿态每回合开始重置为潮涌
     if (typeof RealmSys !== "undefined") RealmSys.onTurnStart();   // 血肉融合/熔炉积攒 + 超维精通（T36 界域系统）
     if (window.Yogens) Yogens.tickDelayed();   // 延迟护盾等（下回合开始时结算）
