@@ -54,6 +54,7 @@ const State = {
       data.whale = !!this.whale;
       data.carriedYogen = this.carriedYogen || null;   // 携带钥令（账号级配置）
       data.usedYogensExplore = this.usedYogensExplore || [];   // 尘封旧忆本探索已用（T12，随存档跨刷新）
+      data.levelRelicDeck = this.levelRelicDeck || [];         // 关卡造物携带（T50，随存档跨刷新）
       data.starEnv = !!this.starEnv;                   // 星辰篇环境开关（T48，随存档跨刷新）
       data.keeperYogenCount = this.keeperYogenCount || 0;   // 归档刻痕输入（T48）
       data.chars = data.chars || {};
@@ -84,6 +85,7 @@ const State = {
     const saved = this.loadSave();
     this.keeperLv = saved.keeperLv || 1;
     this.usedYogensExplore = Array.isArray(saved.usedYogensExplore) ? saved.usedYogensExplore : [];
+    this.levelRelicDeck = Array.isArray(saved.levelRelicDeck) ? saved.levelRelicDeck : [];   // T50：关卡造物随档恢复
     if (saved.depths) this.depths = Object.assign(this.depths, saved.depths);
     this.carriedYogen = saved.carriedYogen || null;
     this.starEnv = !!saved.starEnv;
@@ -669,6 +671,11 @@ const State = {
       for (const k of TEAM_KEYS) sum[k] += r.statMods[k] || 0;
       if (r.statMods.teamDamageBoost) sum.damageBoost += r.statMods.teamDamageBoost;
     }
+    /* 关卡造物队伍静态键（T50：哭泣烟斗强效/蒙尘缝纫机界域等，探索内全局） */
+    if (typeof LevelRelics !== "undefined") {
+      const lr = LevelRelics._teamSum();
+      for (const k of TEAM_KEYS) sum[k] += lr[k] || 0;
+    }
     if (!b) {
       for (const k of TEAM_KEYS) sum[k] = Math.round(sum[k] * 10) / 10;
       return sum;
@@ -689,6 +696,7 @@ const State = {
   keeperLv: 1,     // 守密人等级（顶栏输入，本地保存）
   carriedYogen: null,  // 携带钥令 id（探索前设置，账号级配置，本地保存）
   usedYogensExplore: [],  // 本探索经尘封旧忆释放过的钥令（T12：跨战斗持久，重开一把/主页重置才清）
+  levelRelicDeck: [],     // 关卡造物携带（T50：探索内获得，作用域同 usedYogensExplore——探索边界清空）
   /* ---- 星辰篇环境（T48，源图=造物与刻印/「关卡篇章效果说明」2026-10-05）----
    * starEnv=true 时启用「键能调和」（算力调和/算力满盈/狂气调和）与「璀璨银辉」
    * （银钥觉醒每回合1次+保留/键能超载/归档刻痕）；开关在钥令面板切换（非星辰关卡保持关闭） */
@@ -784,6 +792,7 @@ const State = {
   reset() {
     this.battle = null;
     this.usedYogensExplore = [];   // T12：重置=放弃本次探索，尘封旧忆已用记录清零
+    this.levelRelicDeck = [];      // T50：关卡造物=探索内，重置即清
     this.notify();
     if (window.Log) Log.clear();
     Log.add("已重置。请在左侧面板添加唤醒体与怪物，然后点击「开始战斗」。", "sys");

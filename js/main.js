@@ -89,6 +89,7 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-start-battle").onclick = () => {
     if (typeof Collector !== "undefined" && Collector.unlockTopSelectors) Collector.unlockTopSelectors();   // T35：自由战斗=脱离跑关，顶栏解锁
     State.usedYogensExplore = [];   // 主页面每场战斗=一次独立探索：尘封旧忆已用清零（T12；地图探索不走此路径）
+    State.levelRelicDeck = [];      // 关卡造物同探索语义清零（T50）
     Turn.startBattle();
   };
   document.getElementById("btn-end-turn").onclick = () => Turn.endTurn();
@@ -138,6 +139,7 @@ window.addEventListener("DOMContentLoaded", () => {
   const saved = State.loadSave();
   State.keeperLv = saved.keeperLv || 1;
   State.usedYogensExplore = Array.isArray(saved.usedYogensExplore) ? saved.usedYogensExplore : [];   // T12：探索级已用钥令随存档恢复
+  State.levelRelicDeck = Array.isArray(saved.levelRelicDeck) ? saved.levelRelicDeck : [];   // T50：关卡造物随存档恢复
   document.getElementById("keeper-input").value = State.keeperLv;
   if (saved.depths) State.depths = Object.assign(State.depths, saved.depths);
   State.carriedYogen = saved.carriedYogen || null;

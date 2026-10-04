@@ -233,6 +233,9 @@ const Cards = {
     }
     /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
     if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
+    /* 刻印触发（T50 关卡刻印 Sigils）：附加在实例上的词缀，打出时结算 onPlay 子集。
+     * ⚠与 T38「卡牌刻印（回响语境，未建模无数值影响）」同名不同物 */
+    if (typeof Sigils !== "undefined" && inst.sigil) Sigils.onCardPlayed(inst, owner);
     inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
     /* 巨剑·鲸落合成旗（T42②）：短刃·噬每第 3 次打出 → 本回合下次「长刃·陨」合成鲸落（同回合语义，endTurn 清旗） */
     if (card.whaleFuse && inst.playCount % 3 === 0 && !b.whaleFuseReady) {
@@ -664,6 +667,8 @@ const Cards = {
     if (typeof RealmSys !== "undefined") RealmSys.onBurst(ally);
     /* 命轮爆发钩子（T8）：巨人之刃爆伤+60%/神王的颂歌他人获6狂气/致挚友/心之壁垒/圣火等（pre=本次狂气消耗） */
     if (typeof Wheels !== "undefined") Wheels.onBurst(ally, pre);
+    /* 关卡造物爆发钩子（T50）：美丽瞬间银钥/重锁临时力量 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onBurst(ally);
     Turn.checkEnd();
     State.notify();
   }

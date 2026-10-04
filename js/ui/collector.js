@@ -1993,6 +1993,7 @@ const Collector = {
     this.runHei = 0;
     this.runHp = this.runMaxHp;
     State.usedYogensExplore = [];   // T12：重开一把=新探索，尘封旧忆已用记录清零
+    State.levelRelicDeck = [];      // T50：关卡造物=探索内，重开一把清零
     this.saveMap(); this.renderMap();
     Log.add("🗺 地图已重置，回到出生点——新的探索开始", "sys");
   },

@@ -25,6 +25,8 @@ const Turn = {
     if (typeof Tentacle !== "undefined") Tentacle.initBattle();
     /* 命轮开战效果（T8）：冬夜追忆易伤/神王的颂歌狂气 */
     if (typeof Wheels !== "undefined") Wheels.onBattleStart();
+    /* 关卡造物开战效果（T50）：红宝石胸针力量/日月轮盘界域/海眷歌谣触腕等 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onBattleStart();
     /* 界域系统（血肉熔炉继承/超维空间重置） */
     if (typeof RealmSys !== "undefined") RealmSys.onBattleStart();
     /* 灵塑专属开战效果（T41）：艾瑞卡力量/戒备、环行·拉蒙娜银钥能量 */
@@ -49,7 +51,8 @@ const Turn = {
     const b = State.battle;
     b.turn += 1;
     b.phase = "play";
-    b.energy = State.ENERGY_PER_TURN + (b.turn === 1 ? (b.pactEnergyBonus || 0) : 0);
+    b.energy = State.ENERGY_PER_TURN + (b.turn === 1 ? (b.pactEnergyBonus || 0) : 0)
+      + (typeof LevelRelics !== "undefined" ? LevelRelics.maxEnergyBonus() : 0);   // 关卡造物最大算力（活性注射器，T50）
     b.yogenCastsThisTurn = 0;   // 钥令每回合释放次数重置（第1次携带/第2次尘封旧忆）
     b.firstCardPlayed = false;  // 魔女宽檐帽首卡标记重置（T8）
     b.strikesPlayed = 0;        // discPerStrike 打击计数重置（T32 实测批；T38 C 改全队共享数值型）
@@ -69,6 +72,8 @@ const Turn = {
     } else {
       Cards.draw(this.DRAW_COUNT);
     }
+    /* 关卡造物回合开始效果（T50）：定向罗盘抽牌/日月轮盘奇偶/守护之手低血盾（快照前，随回溯一致） */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onTurnStart();
     this.snapshotTurn();   // 记录回合开始状态与手牌（供回溯）
     State.notify();
   },
@@ -192,6 +197,8 @@ const Turn = {
 
     /* 命轮回合末钩子（T8 四期）：极夜与破晓银钥/阿库特之春/慈悲的哺育/永不停歇的演奏 */
     if (typeof Wheels !== "undefined") Wheels.onTurnEnd();
+    /* 关卡造物回合末效果（T50）：恩赐之血回血/失衡的天平手牌狂气（弃牌前，「回合结束前手中每张」语义） */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onTurnEnd();
     /* 超维回合结束（维度跃迁：-25% 效果仅超维回合内） */
     if (typeof RealmSys !== "undefined") RealmSys.onTurnEnd();
 

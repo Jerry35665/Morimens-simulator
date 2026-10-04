@@ -2197,6 +2197,124 @@ function runAllTests() {
     State.starEnv = false;
   }
 
+  console.log("== 8.35 T50 关卡造物 + 刻印（2026-10-05）==");
+  {
+    DBF.relicDeck = [];   // 清默认造物（旧库怪蛇残蜕死抗污染队伍键断言）
+    State.levelRelicDeck = [];
+    State.reset(); State.newBattle();
+    /* --- A 数据完整性 --- */
+    check("T50: 关卡造物库 224 条", (DBF.levelRelics || []).length === 224, String((DBF.levelRelics || []).length));
+    check("T50: 刻印库 35 条（普通18+高级17）", (DBF.sigils || []).length === 35
+      && DBF.sigils.filter(s => s.grade === "普通刻印").length === 18
+      && DBF.sigils.filter(s => s.grade === "高级刻印").length === 17);
+    check("T50: 关卡初始造物五禁区", (DBF.levelInitial || []).length === 5
+      && DBF.levelInitial[0].level === "第一禁区·危险等级C"
+      && DBF.levelInitial[4].initial[0].name === "日月轮盘+");
+    check("T50: 环境规则三组（时空扭曲含 4 规则）", (DBF.levelEnvRules || []).length === 3
+      && DBF.levelEnvRules[2].group === "时空扭曲" && DBF.levelEnvRules[2].rules.length === 4
+      && DBF.levelEnvRules[2].rules[0].name === "存在悖论");
+    check("T50: 转录忠实抽样（普特尼晨报 逐字+src 可复核）", (() => {
+      const r = DBF.levelRelics.find(x => x.name === "普特尼晨报");
+      return r && r.quality === "白银造物" && r.cat === "洞察"
+        && r.effect.includes("战斗开始时获得 15% 伤害强效") && r.flavor === "您最贴心的马桶伴侣。"
+        && r.src === "20261005025001_1.jpg";
+    })());
+    check("T50: 维度影像族在库（战斗内拾取组 ≥14 + 图鉴组）", (() => {
+      const inn = DBF.levelRelics.filter(x => x.cat === "维度影像·战斗内");
+      return inn.length >= 14 && !!DBF.levelRelics.find(x => x.name === "维度影像·图鲁")
+        && !!DBF.levelRelics.find(x => x.name === "维度影像·血链·希洛");
+    })());
+    check("T50: 未建模登记（mods 空 + notes 在案）", (() => {
+      const r = DBF.levelRelics.find(x => x.name === "普特尼晨报");
+      return r && Object.keys(r.mods).length === 0 && /未建模/.test(r.notes);
+    })());
+    /* --- B 关卡造物结算 --- */
+    check("T50: team 静态键（哭泣烟斗 强效+0.3 进队伍）", (() => {
+      State.levelRelicDeck = [];
+      const before = State.teamStats().damageBoost;
+      LevelRelics.add(DBF.levelRelics.find(x => x.name === "哭泣烟斗").id);
+      const after = State.teamStats().damageBoost;
+      LevelRelics.remove(DBF.levelRelics.find(x => x.name === "哭泣烟斗").id);
+      return Math.abs(after - before - 0.3) < 1e-9 && State.teamStats().damageBoost === before;
+    })());
+    check("T50: add/remove 随存档持久", (() => {
+      LevelRelics.add(DBF.levelRelics.find(x => x.name === "定向罗盘").id);
+      const saved = State.loadSave();
+      const ok = Array.isArray(saved.levelRelicDeck) && saved.levelRelicDeck.length === 1;
+      LevelRelics.clear();
+      return ok;
+    })());
+    State.reset(); State.newBattle();
+    const lrAlly = State.addAlly("char_rotan", 1);
+    State.addEnemy("enemy_dummy");
+    State.levelRelicDeck = [DBF.levelRelics.find(x => x.name === "红宝石胸针").id];
+    Turn.startBattle();
+    check("T50: 开战力量（红宝石胸针 +78 点 buff_strength）", (() => {
+      const bi = (lrAlly.buffs || []).find(x => x.defId === "buff_strength");
+      return bi && bi.per === 78;
+    })());
+    State.levelRelicDeck = [
+      DBF.levelRelics.find(x => x.name === "定向罗盘").id,
+      DBF.levelRelics.find(x => x.name === "活性注射器").id,
+    ];
+    Turn.startBattle();
+    check("T50: 最大算力（活性注射器 5+1）", (() => {
+      State.levelRelicDeck = [DBF.levelRelics.find(x => x.name === "活性注射器").id];
+      Turn.startBattle();
+      return State.battle.energy === State.ENERGY_PER_TURN + 1;
+    })(), "energy:" + State.battle.energy);
+    check("T50: 回合开始抽牌（定向罗盘 +1，注卡保证有牌）", (() => {
+      State.levelRelicDeck = [DBF.levelRelics.find(x => x.name === "定向罗盘").id];
+      const b2 = State.battle;
+      /* 单人基础牌堆仅 4 张会被首轮抽光——向抽牌堆注 2 张保证罗盘有牌可抽 */
+      for (let i = 0; i < 2; i++) b2.piles.draw.push(Cards.inst("card_rotan_hunger", false));
+      const h0 = b2.piles.hand.length;
+      LevelRelics.onTurnStart();
+      return b2.piles.hand.length === h0 + 1;
+    })(), `hand:${State.battle.piles.hand.length}`);
+    check("T50: 回合末回血（恩赐之血 78，共享血条）", (() => {
+      State.levelRelicDeck = [DBF.levelRelics.find(x => x.name === "恩赐之血").id];
+      const b = State.battle;
+      b.team.hp = b.team.maxHp - 100;
+      LevelRelics.onTurnEnd();
+      return b.team.hp === b.team.maxHp - 100 + 78;
+    })());
+    check("T50: 探索边界清空（State.reset → deck 空）", (() => { State.reset(); return State.levelRelicDeck.length === 0; })());
+    /* --- C 刻印 --- */
+    State.newBattle();
+    const sgAlly = State.addAlly("char_rotan", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const gb = State.battle;
+    gb.energy = 9;
+    check("T50: 刻印筹算（打出 +1 算力）", (() => {
+      Cards.generate("card_rotan_hunger");   // 1 费
+      const inst = gb.piles.hand.find(c => c.defId === "card_rotan_hunger");
+      Sigils.attach(inst, "筹算");
+      const e0 = gb.energy;
+      Cards.play(inst.uid, null);
+      return gb.energy === e0 - 1 + 1;
+    })(), "energy:" + gb.energy);
+    check("T50: 刻印铁壁（打出 +117 护盾挂 owner）", (() => {
+      gb.energy = 9;
+      Cards.generate("card_rotan_hunger");
+      const inst = gb.piles.hand.find(c => c.defId === "card_rotan_hunger");
+      Sigils.attach(inst, "铁壁");
+      Cards.play(inst.uid, null);
+      return sgAlly.shield === 117;
+    })(), "shield:" + sgAlly.shield);
+    check("T50: 刻印虚弱（全体敌人 1 回合）", (() => {
+      gb.energy = 9;
+      Cards.generate("card_rotan_hunger");
+      const inst = gb.piles.hand.find(c => c.defId === "card_rotan_hunger");
+      Sigils.attach(inst, "虚弱");
+      Cards.play(inst.uid, null);
+      return gb.enemies.every(e => e.hp <= 0 || (e.buffs || []).some(x => x.defId === "debuff_weak"));
+    })());
+    check("T50: 刻印数据模型（35 条中 21 条已建模 onPlay）", DBF.sigils.filter(s => Object.keys(s.mods || {}).length > 0).length === 21);
+    State.levelRelicDeck = [];
+  }
+
   renderSummary();
 }
 

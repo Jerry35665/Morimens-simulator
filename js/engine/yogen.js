@@ -126,6 +126,8 @@ const Yogens = {
       b.piles.hand.push(Cards.inst(cardId, false));
       Log.add(`<b style="color:var(--gold)">🔓 银钥觉醒</b>：消耗 ${cost} 银钥（银钥 ${b.silver}${b.silver < 0 ? "，已透支" : ""}），「${card.name}」置入手牌；下次消耗 ${this.awakenCost()}（每获得 1 张翻倍）`, "sys");
     }
+    /* 关卡造物银钥觉醒钩子（T50）：崭新的钱包抽牌/弥萨格徽章算力/蝴蝶标本护盾/我们的家力量 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onSilverAwaken();
     State.notify();
     return true;
   },
