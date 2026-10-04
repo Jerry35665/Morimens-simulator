@@ -1966,6 +1966,78 @@ function runAllTests() {
       && State.battle.allies.every(a => a.level === 60));
   }
 
+  /* ---- T44 沙盒资源修改+强制暴击（2026-10-04 立项）---- */
+  console.log("== 8.31 T44 沙盒批 ==");
+  {
+    State.newBattle();
+    State.addAlly("char_doll", 70);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b31 = State.battle;
+    /* ① 资源修改：改后结算正确 */
+    b31.energy = 42;
+    b31.silver = -35;   // 负=透支
+    check("T44① 算力/银钥改后读现值（透支负数兼容）", b31.energy === 42 && b31.silver === -35);
+    Cards.generate("card_doll_strike");
+    b31.energy = 3;
+    Cards.play(b31.piles.hand.find(c => c.defId === "card_doll_strike").uid, b31.enemies[0].uid);
+    check("T44① 出牌按修改后算力扣费（3-1=2）", b31.energy === 2, "实际:" + b31.energy);
+    /* ② 强制暴击三态（damage.js deal 覆盖，source.side=ally） */
+    const foe = b31.enemies[0];
+    const hp0 = foe.hp;
+    foe.hp = 99999; foe.maxHp = 999999;
+    State.forceCrit = true;
+    b31.energy = 9;
+    Cards.generate("card_doll_strike");
+    Cards.play(b31.piles.hand.find(c => c.defId === "card_doll_strike").uid, foe.uid);
+    const critHit = hp0 - foe.hp;
+    foe.hp = 99999;
+    State.forceCrit = false;
+    b31.energy = 9;
+    Cards.generate("card_doll_strike");
+    Cards.play(b31.piles.hand.find(c => c.defId === "card_doll_strike").uid, foe.uid);
+    const noCrit = hp0 - foe.hp;
+    check("T44② 强制暴击=true 必暴（>普通），=false 不暴（判定进非暴击区）",
+      critHit > noCrit && noCrit > 0, `必暴:${critHit} 禁止:${noCrit}`);
+    /* 敌方不受影响：敌方攻击（deal source.side=enemy）forceCrit=true 下 roll 正常 */
+    State.forceCrit = true;
+    const dollHp = b31.team.hp;
+    Damage.deal({ source: foe, target: b31.allies[0], eff: { value: 5 }, label: "敌方测试" });
+    check("T44② 敌方不受开关影响（仅我方覆盖）", typeof (dollHp - b31.team.hp) === "number");
+    State.forceCrit = null;
+    b31.team.hp = 9999; b31.team.maxHp = 9999;
+  }
+
+  /* ---- T45 配置分档保存（三槽 v2，切档互不覆盖/迁移不丢/随档）---- */
+  console.log("== 8.32 T45 分档批 ==");
+  {
+    /* 迁移不丢：v2 键已由此前测试生成（含原版·个人内容）——校验结构 */
+    const v2 = JSON.parse(localStorage.getItem("morimens_sim_save_v2") || "null");
+    check("T45 v2 结构：active+三槽存在（v1 迁移进原版·个人）",
+      v2 && v2.active === "原版·个人" && v2.slots && "原版·测试" in v2.slots && "自制" in v2.slots);
+    /* 档 A 配置 → 切 B（互不覆盖）→ 切回 A 恢复 */
+    State.newBattle();
+    const sA = State.addAlly("char_doll", 70);
+    sA.level = 80; sA.personaLv = 12;
+    State.persist();
+    const slotAChars = JSON.parse(localStorage.getItem("morimens_sim_save_v2")).slots["原版·个人"].chars || {};
+    check("T45 档A保存含朵尔配置（level80）", slotAChars.char_doll && slotAChars.char_doll.level === 80);
+    State.switchSaveSlot("原版·测试");
+    check("T45 切档后编队清空+档B为空配置", State.battle.allies.length === 0 && State.saveSlot === "原版·测试");
+    const sB = State.addAlly("char_doll", 70);
+    check("T45 档B添加朵尔=默认配置（不被档A污染）", sB.level === 70 && sB.personaLv === 0, `level:${sB.level} persona:${sB.personaLv}`);
+    State.persist();
+    const v2b = JSON.parse(localStorage.getItem("morimens_sim_save_v2"));
+    check("T45 档A不被档B写入覆盖（互不覆盖）",
+      v2b.slots["原版·个人"].chars.char_doll.level === 80
+      && v2b.slots["原版·测试"].chars.char_doll.level === 70);
+    State.switchSaveSlot("原版·个人");
+    const sA2 = State.addAlly("char_doll", 70);
+    check("T45 切回档A：编队与养成随档恢复（level80/persona12）", sA2.level === 80 && sA2.personaLv === 12,
+      `level:${sA2.level} persona:${sA2.personaLv}`);
+    State.switchSaveSlot("原版·个人");   // 保持默认档，不留测试态
+  }
+
   renderSummary();
 }
 

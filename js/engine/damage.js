@@ -235,8 +235,12 @@ const Damage = {
     /* 暴击判定（2026-09-26 实测：×(1+暴击伤害%)）：按攻击方面板暴击率+临时暴击率 roll */
     const crPct = ((source.stats && source.stats.critRate) || 0)
       + (source.buffs ? Buffs.collect(source, "critRateFlat").reduce((s, m) => s + m.total, 0) : 0);
-    const isCrit = crPct > 0 && Math.random() * 100 < crPct;
-    const r = this.compute({ source, target, card, eff, crit: crPct > 0 ? isCrit : undefined });
+    /* T44② 强制暴击开关（沙盒三态 State.forceCrit：true 必暴/false 禁止/null 正常 roll）——
+     * 仅覆盖我方（source.side==="ally"），敌方不受影响；触腕按我方侧跟随（tentacle.js strike 同款覆盖） */
+    const fc = source && source.side === "ally" ? State.forceCrit : null;
+    const isCrit = fc === true ? true : fc === false ? false : (crPct > 0 && Math.random() * 100 < crPct);
+    const critArg = fc === true ? true : (crPct > 0 ? (fc === false ? false : isCrit) : undefined);
+    const r = this.compute({ source, target, card, eff, crit: critArg });
     this.applyRawDamage(target, r.final, (isCrit ? "暴击！" : "") + (label || (card ? card.name : "伤害")), r);
     if (isCrit && window.UIBoard) UIBoard.float(target.uid, "暴击", "crit");
     if (window.UIBoard) UIBoard.float(target.uid, `-${r.final}`, "dmg");

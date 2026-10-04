@@ -33,6 +33,12 @@ const UIGear = {
       <tr>${COMBAT_KEYS.map(k => `<td>${u.stats[k] != null ? u.stats[k] : u.stats.constitution}</td>`).join("")}</tr>
       <tr style="color:var(--text-dim)">${NAKED_KEYS.map(k => `<td>${naked[k]}</td>`).join("")}</tr></table>
       <div class="m-row dim">第二行=裸装对照（≈游戏「属性详情」面板：不含 命轮/密契/灵塑/造物；灵塑实战生效、游戏面板不显示，故第一行体质/攻/防比它高）</div>`;
+    /* T45 存档槽切换（三档互不覆盖） */
+    const slotOpts = State.SAVE_SLOTS.map(s => `<option value="${s}" ${s === State.saveSlot ? "selected" : ""}>${s}</option>`).join("");
+    html += `<div class="m-row">💾 存档档位：<select class="mini-btn" id="save-slot-select">${slotOpts}</select>
+      <button class="mini-btn" onclick="State.switchSaveSlot(document.getElementById('save-slot-select').value)">切档</button>
+      <button class="mini-btn" onclick="State.copySaveSlot(document.getElementById('save-slot-select').value)">另存到该档</button>
+      <span class="dim">三档独立保存（原版·个人=真实练度 / 原版·测试=试验 / 自制=自制阵容）；切档后编队清空，唤醒体按该档配置重新添加</span></div>`;
 
     /* 等级 */
     const cap = State.levelCap(u);

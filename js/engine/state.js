@@ -15,12 +15,35 @@ const State = {
   battle: null,          // 战斗进行中的状态对象
   _uid: 1,
 
-  /* ---------- 本地保存（唤醒体配置 / 守密人等级） ---------- */
-  SAVE_KEY: "morimens_sim_save_v1",
+  /* ---------- 本地保存（唤醒体配置 / 守密人等级） ----------
+   * T45 分档：v2 键={active,slots:{原版·个人,原版·测试,自制}}，persist/load 全链走 active 槽；
+   * 旧 v1 键一次性迁移进「原版·个人」并保留兜底（v1 不删）。test.html 备份-恢复按 morimens_* 前缀天然兼容 v2 */
+  SAVE_KEY: "morimens_sim_save_v1",          // 旧键（兜底保留）
+  SAVE_KEY_V2: "morimens_sim_save_v2",
+  SAVE_SLOTS: ["原版·个人", "原版·测试", "自制"],
+  saveSlot: "原版·个人",                     // 当前 active 槽（会话内存，随 persist 落 v2）
+
+  _loadV2() {
+    try {
+      const v2 = JSON.parse(localStorage.getItem(this.SAVE_KEY_V2) || "null");
+      if (v2 && v2.slots) {
+        v2.active = this.SAVE_SLOTS.includes(v2.active) ? v2.active : "原版·个人";
+        for (const s of this.SAVE_SLOTS) if (!v2.slots[s]) v2.slots[s] = null;
+        return v2;
+      }
+    } catch (e) { /* 损坏则重建 */ }
+    /* 迁移：旧 v1 → 原版·个人（v1 键保留兜底不删） */
+    let v1 = {};
+    try { v1 = JSON.parse(localStorage.getItem(this.SAVE_KEY) || "{}"); } catch (e) {}
+    const v2 = { active: "原版·个人", slots: { "原版·个人": v1, "原版·测试": null, "自制": null } };
+    try { localStorage.setItem(this.SAVE_KEY_V2, JSON.stringify(v2)); } catch (e) {}
+    return v2;
+  },
 
   loadSave() {
-    try { return JSON.parse(localStorage.getItem(this.SAVE_KEY) || "{}"); }
-    catch (e) { return {}; }
+    const v2 = this._loadV2();
+    this.saveSlot = v2.active;
+    return v2.slots[v2.active] || {};
   },
 
   persist() {
@@ -40,8 +63,41 @@ const State = {
           pactDetails: a.pactDetails, pactSetBound: a.pactSetBound, gukuMax: a.gukuMax
         };
       }
-      localStorage.setItem(this.SAVE_KEY, JSON.stringify(data));
+      /* T45：写 v2 active 槽（旧 v1 不再更新，保留兜底） */
+      const v2 = this._loadV2();
+      v2.active = this.saveSlot;
+      v2.slots[this.saveSlot] = data;
+      localStorage.setItem(this.SAVE_KEY_V2, JSON.stringify(v2));
     } catch (e) { /* localStorage 不可用时静默跳过 */ }
+  },
+
+  /* T45：切档——当前状态存进旧槽 → 切 active → 新槽数据恢复内存 → 重置编队（按新档保存配置重新加人） */
+  switchSaveSlot(name) {
+    if (!this.SAVE_SLOTS.includes(name) || name === this.saveSlot) return;
+    this.persist();                     // 当前状态落旧槽
+    const v2 = this._loadV2();
+    v2.active = name;
+    try { localStorage.setItem(this.SAVE_KEY_V2, JSON.stringify(v2)); } catch (e) {}
+    this.saveSlot = name;
+    const saved = this.loadSave();
+    this.keeperLv = saved.keeperLv || 1;
+    this.usedYogensExplore = Array.isArray(saved.usedYogensExplore) ? saved.usedYogensExplore : [];
+    if (saved.depths) this.depths = Object.assign(this.depths, saved.depths);
+    this.carriedYogen = saved.carriedYogen || null;
+    this.whale = !!saved.whale;
+    if (this.battle) this.newBattle();   // 编队随档清空（保存配置在下次 addAlly 时套用）
+    Log.add(`💾 已切换到存档槽「${name}」（编队已清空，唤醒体按该档保存配置重新添加）`, "good");
+    this.notify();
+  },
+
+  /* T45：把当前 active 槽内容另存到目标槽 */
+  copySaveSlot(target) {
+    if (!this.SAVE_SLOTS.includes(target) || target === this.saveSlot) return;
+    this.persist();
+    const v2 = this._loadV2();
+    v2.slots[target] = JSON.parse(JSON.stringify(v2.slots[this.saveSlot] || {}));
+    try { localStorage.setItem(this.SAVE_KEY_V2, JSON.stringify(v2)); } catch (e) {}
+    Log.add(`💾 已把「${this.saveSlot}」另存到「${target}」`, "good");
   },
 
   savedCharConfig(charId) {

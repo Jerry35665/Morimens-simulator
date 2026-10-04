@@ -67,6 +67,13 @@ const UIRender = {
     if (energyEl) energyEl.textContent = `算力 ${b.energy}/${State.ENERGY_PER_TURN}`;
     if (silverEl) {
       silverEl.textContent = `银钥 ${b.silver}/1000${b.silver < 0 ? "（透支）" : ""}`;
+      /* T44② 强制暴击 chip（沙盒三态） */
+      const fcEl = document.getElementById("forcecrit-display");
+      if (fcEl) {
+        const fc = State.forceCrit;
+        fcEl.textContent = fc === true ? "🎯暴击 必暴" : fc === false ? "🎯暴击 禁止" : "🎯暴击 正常";
+        fcEl.classList.toggle("primary", fc === true || fc === false);
+      }
       /* 银钥满1000且可释放钥令时金色高亮（点击打开钥令面板） */
       silverEl.classList.toggle("ready", !!(window.Yogens && Yogens.ready()));
     }
@@ -124,6 +131,8 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-relic-manage").onclick = () => UIGear.manageRelics();
   document.getElementById("team-stats-chip").onclick = () => UIGear.openTeamStats();
   document.getElementById("silver-display").onclick = () => UIYogen.panel();   // 钥令面板
+  document.getElementById("energy-display").onclick = () => UIBoard.editResource("energy");   // T44① 沙盒改算力
+  document.getElementById("forcecrit-display").onclick = () => UIBoard.cycleForceCrit();       // T44② 强制暴击三态
 
   /* 守密人等级/研究深度/携带钥令本地恢复 */
   const saved = State.loadSave();

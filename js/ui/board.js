@@ -60,12 +60,21 @@ const UIBoard = {
       if (card && (card.target === "ally" || card.target === "self" || card.target === "none")) el.classList.add("targetable");
     }
 
-    let html = `<div class="u-head">
+    /* T46 本地立绘：data/personal/portraits/<角色名>.jpg|png（personal 在 .gitignore，不入库）；加载失败回落文字样式 */
+    const portrait = `<div class="u-portrait" data-name="${u.def.name.slice(0, 1)}"><img src="data/personal/portraits/${encodeURIComponent(u.def.name)}.jpg" alt=""
+      onerror="if(!this.dataset.png){this.dataset.png=1;this.src='data/personal/portraits/${encodeURIComponent(u.def.name)}.png';}else{this.parentNode.classList.add('no-img');this.remove();}"></div>`;
+    let html = `${portrait}<div class="u-head">
       <span class="u-name">${u.def.name}</span>
       <span class="u-lv">Lv${u.level} · ${u.def.rarity} · ${State.effectiveRealm(u.def)} · ${u.def.role}</span>
     </div>
     <div class="u-menu">
       <button title="养成配置：等级/启灵/灵塑适性/内在灵格/命轮/密契" onclick="event.stopPropagation();UIGear.open('${u.uid}')">⚙配置</button>
+      <button title="🖼立绘：把游戏截图放到 data/personal/portraits/<角色名>.jpg 或 .png（个人目录不入库），刷新页面即显示在单位卡左侧" onclick="event.stopPropagation();alert('本地立绘说明：
+1. 截图保存到 data/personal/portraits/ 目录
+2. 命名=角色名（如 朵尔.jpg / 蚀灭·萝坦.png）
+3. 刷新页面生效
+
+该目录在 .gitignore 中，不会上传 GitHub（合规：游戏素材不入公开仓库）')">🖼</button>
       <button title="该唤醒体的卡牌（生成到手牌，数值只随其属性结算）" onclick="event.stopPropagation();UIBoard.menuCards('${u.uid}')">卡</button>
       <button title="添加buff/debuff" onclick="event.stopPropagation();UIBoard.menuBuff('${u.uid}')">+B</button>
       <button title="调整狂气/触腕" onclick="event.stopPropagation();UIBoard.menuAlly('${u.uid}')">调</button>
@@ -364,6 +373,28 @@ const UIBoard = {
     Modal.open("界域天赋系统", html);
   },
 
+  /* T44① 沙盒资源修改：算力 0~99 / 银钥任意整数（含负=透支） */
+  editResource(kind) {
+    const b = State.battle;
+    if (!b) { Log.add("✗ 尚未开始战斗（先「开始战斗」再改资源）", "sys"); return; }
+    if (kind === "energy") {
+      const v = prompt("设置算力（沙盒 0~99，出牌扣费/钥令门槛读现值）：", String(b.energy));
+      if (v === null) return;
+      const n2 = Math.max(0, Math.min(99, parseInt(v, 10) || 0));
+      b.energy = n2;
+      Log.add(`⚙ 沙盒：算力 → ${n2}`, "sys");
+    }
+    State.notify();
+  },
+
+  /* T44② 强制暴击三态循环：null(正常)→true(必暴)→false(禁止) */
+  cycleForceCrit() {
+    State.forceCrit = State.forceCrit === true ? false : State.forceCrit === false ? null : true;
+    const label = State.forceCrit === true ? "强制暴击" : State.forceCrit === false ? "强制不暴击" : "正常 roll";
+    Log.add(`🎯 沙盒：暴击开关 → ${label}（仅我方卡与触腕）`, "sys");
+    State.notify();
+  },
+
   menuResources() {
     const b = State.battle;
     if (!b) return;
@@ -373,6 +404,8 @@ const UIBoard = {
       <div class="m-row">🐙 触腕：${t ? `${t.count} 条 · ${t.stance}${t.rally ? ` · 集结 ${t.rally}` : ""} · 单次 ${Tentacle.singleDamage()}` : "无"}
       <button class="mini-btn" onclick="if(!State.battle.tentacle)State.battle.tentacle={count:0,stance:'潮涌',rally:0,swapped:false};State.battle.tentacle.count++;State.notify();UIBoard.menuResources()">+1</button>
       <button class="mini-btn" onclick="if(State.battle.tentacle)State.battle.tentacle.count=Math.max(0,State.battle.tentacle.count-1);State.notify();UIBoard.menuResources()">-1</button></div>
+      <div class="m-row">🔑 银钥：${b.silver}/1000${b.silver < 0 ? "（透支）" : ""}
+      <button class="mini-btn" onclick="(() => { const v = prompt('设置银钥能量（沙盒，任意整数含负=透支）：', String(State.battle.silver)); if (v !== null) { State.battle.silver = parseInt(v, 10) || 0; Log.add('⚙ 沙盒：银钥 → ' + State.battle.silver, 'sys'); State.notify(); UIBoard.menuResources(); } })()">修改</button></div>
       <div class="m-row">🔥 猩红熔炉：${b.team.resources.furnace}
       <button class="mini-btn" onclick="UIBoard.bumpFurnace(-1)">-1</button>
       <button class="mini-btn" onclick="UIBoard.bumpFurnace(1)">+1</button>

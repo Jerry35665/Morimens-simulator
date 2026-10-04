@@ -155,7 +155,9 @@ const Tentacle = {
     const crPct = b.allies.reduce((s, a) => s + ((a.stats && a.stats.critRate) || 0), 0) * 0.5;
     const cdPct = b.allies.reduce((s, a) => s + ((a.stats && a.stats.critDmg) || 0), 0) * 0.5;
     let isCrit = false;
-    if (crPct > 0 && Math.random() * 100 < crPct) {
+    /* T44②：触腕=我方侧，跟随强制暴击开关 */
+    const fcT = State.forceCrit;
+    if (fcT === true || (fcT !== false && crPct > 0 && Math.random() * 100 < crPct)) {
       v *= 1 + cdPct / 100; v = Math.ceil(v); isCrit = true;
       steps.push({ label: "⑥ 触腕暴击", value: v, factorText: `× ${(1 + cdPct / 100).toFixed(2)}`, note: `触腕暴击率 ${crPct}%（全队和×50%）` });
     }

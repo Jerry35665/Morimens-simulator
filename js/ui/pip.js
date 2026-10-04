@@ -323,7 +323,11 @@ ${this.snapshotText()}
     } catch (e) {
       /* 降级：移除空回复，提示复制模式 */
       if (this.chatLog.length && this.chatLog[this.chatLog.length - 1].role === "assistant" && !this.chatLog[this.chatLog.length - 1].content) this.chatLog.pop();
-      this.chatLog.push({ role: "assistant", content: `⚠ 无法连接 AI（${e.message}）。已降级为复制模式：点「复制问题+局面」后回到 ZCode 会话粘贴提问。` });
+      /* T47 在线版提示：GitHub Pages 纯静态无 /api/chat 代理——非本地访问时说明降级原因 */
+      const online = !/^127\.0\.0\.1$|^localhost$/.test(location.hostname);
+      this.chatLog.push({ role: "assistant", content: online
+        ? `⚠ 在线版（GitHub Pages）为纯静态站点，不含 AI 代理，AI 直发不可用。已降级为复制模式：点「复制问题+局面」，把内容粘贴到任意 AI 助手即可获得方案（方案 JSON 贴回此处仍可模拟预览/采纳）。本地版（start.bat）配 Key 后可用直发。`
+        : `⚠ 无法连接 AI（${e.message}）。已降级为复制模式：点「复制问题+局面」后回到 ZCode 会话粘贴提问。` });
       this.renderChat();
       this.setStatus("复制模式");
       input.value = q;   // 还原输入

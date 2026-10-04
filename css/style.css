@@ -559,3 +559,33 @@ table.mech-table { border-collapse: collapse; width: 100%; font-size: 12px; }
 }
 .map-head .mini-btn.on { color: var(--gold); border-color: var(--gold); background: rgba(201,168,106,.12); }
 .map-info { padding: 4px 10px; font-size: 12px; color: var(--text-dim); }
+
+/* ===== T46 界面美化批（2026-10-04；纯手写，不含游戏素材） ===== */
+/* 单位卡：本地立绘头像框（无图时显示金色占位首字） */
+.unit .u-portrait {
+  width: 46px; height: 46px; flex: 0 0 46px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel2);
+  overflow: hidden; display: flex; align-items: center; justify-content: center;
+  margin-right: 8px;
+}
+.unit .u-portrait img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.unit .u-portrait.no-img::before {
+  content: attr(data-name);
+  color: var(--gold); font-weight: bold; font-size: 18px;
+}
+/* 卡牌视觉：hover 抬升 + 类型色带（左缘） */
+.card { transition: transform .12s ease, box-shadow .12s ease; border-left: 3px solid var(--border); }
+.card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.45); }
+.card[data-type="攻击"] { border-left-color: #b75a64; }
+.card[data-type="防御"] { border-left-color: #4f83c2; }
+.card[data-type="技能"] { border-left-color: #8b7ec8; }
+.card[data-type="权柄"] { border-left-color: #c9a86a; }
+.card[data-type="灵知觉醒"] { border-left-color: #5eeffb; }
+/* 面板与弹窗：圆角阴影统一 */
+.modal { border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.55); }
+.mech-table th { background: var(--panel2); color: var(--gold); }
+/* 日志与资源区排版 */
+#log-list { line-height: 1.55; }
+.res-chip { transition: border-color .12s ease; }
+.res-chip.chip-btn:hover { border-color: var(--gold); cursor: pointer; }
