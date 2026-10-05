@@ -8,19 +8,17 @@ const Buffs = {
   /* 添加（同名叠层）。per: 点数型buff每层覆盖值（如力量N点）。返回实例或 null
    * T32 实测批（2026-10-02 用户口径）：
    * ① def.roundLayers（易伤/虚弱/脆弱/重创/戒备）：「N 回合」= N 层，每回合结束 -1 层，0 层移除
-   * ② def.shared（力量/力量降低/戒备/易伤/虚弱/脆弱/重创）：全队共享——施加/减层作用于该侧全体 */
+   * ② def.shared（力量/戒备，T37③）：全队共享——**2026-10-05 用户实测修正：挂队伍级一份实例**
+   *    （b.team.buffs，显示在共享血条下，不每个人重复挂；触腕/伤害结算只吃一次），
+   *    collect 对我方单位合并读取=效果仍全队生效 */
   add(unit, buffId, stacks = 1, duration = null, note = "", per = null) {
     const def = State.getBuff(buffId);
     if (!def) { Log.add(`未知buff: ${buffId}`, "sys"); return null; }
     if (def.shared) {
-      const side = unit.side === "ally" ? State.battle.allies : State.battle.enemies;
-      let first = null;
-      for (const u of side) {
-        if (u.hp <= 0) continue;
-        const inst = this._addOne(u, def, stacks, duration, first ? "" : note, per);
-        if (!first) first = inst;
-      }
-      return first;
+      if (unit.side !== "ally" || !State.battle) return this._addOne(unit, def, stacks, duration, note, per);
+      const team = State.battle.team;
+      if (!team.buffs) team.buffs = [];
+      return this._addOne(team, def, stacks, duration, note, per);
     }
     return this._addOne(unit, def, stacks, duration, note, per);
   },
@@ -49,7 +47,7 @@ const Buffs = {
     }
 
     Log.add(
-      `${unit.def.name} 获得 <b class="${def.kind === "debuff" ? "warn-text" : ""}">${def.name}</b>×${inst.stacks}` +
+      `${(unit.def && unit.def.name) || "队伍"} 获得 <b class="${def.kind === "debuff" ? "warn-text" : ""}">${def.name}</b>×${inst.stacks}` +
       (per != null ? `（每层${per > 0 ? "+" : ""}${per}）` : "") +
       (def.shared ? "（全队共享）" : "") +
       (inst.duration != null ? `（剩 ${inst.duration} 回合）` : "") +
@@ -86,11 +84,14 @@ const Buffs = {
     for (const inst of [...unit.buffs]) {
       const def = State.getBuff(inst.defId);
       if (def && def.onEnd === "damageFlat") {
+        if (!unit.def) continue;   // team 容器无 def（dot 类不会是 shared，双保险）
         const per = inst.per != null ? inst.per : def.effect.dotFlat;
         const dmg = per * inst.stacks;
         Damage.applyRawDamage(unit, dmg, `${def.name}（每层${per}×${inst.stacks}层，触发时机待确认）`);
       }
       if (def && def.onEnd === "damageFlatPurge") {
+        /* dot 类不会是 shared（力量/戒备 onEnd 均 null）——team 容器无 def 永不走此分支，双保险守卫 */
+        if (!unit.def) continue;
         const per = inst.per != null ? inst.per : def.effect.dotFlat;
         const dmg = per * inst.stacks;
         Damage.applyRawDamage(unit, dmg, `${def.name}（${inst.stacks}层，结算后移除）`);
@@ -100,14 +101,14 @@ const Buffs = {
       if (inst.duration != null) {
         inst.duration -= 1;
         if (inst.duration <= 0) {
-          Log.add(`${unit.def.name} 的 ${def.name} 效果结束`, "sys");
+          Log.add(`${(unit.def && unit.def.name) || "队伍"} 的 ${def.name} 效果结束`, "sys");
           unit.buffs = unit.buffs.filter(x => x !== inst);
         }
       } else if (def.roundLayers && inst.stacks > 0) {
         /* 「N 回合」= N 层：每回合 -1 层（用户口径 2026-10-02） */
         inst.stacks -= 1;
         if (inst.stacks <= 0) {
-          Log.add(`${unit.def.name} 的 ${def.name} 效果结束`, "sys");
+          Log.add(`${(unit.def && unit.def.name) || "队伍"} 的 ${def.name} 效果结束`, "sys");
           unit.buffs = unit.buffs.filter(x => x !== inst);
         }
       }
@@ -119,7 +120,7 @@ const Buffs = {
    * stack:"duration"（易伤/虚弱/脆弱——层数=持续回合数，不影响数值）total 不乘层数 */
   collect(unit, field) {
     const mods = [];
-    for (const inst of unit.buffs) {
+    const grab = (inst) => {
       const def = State.getBuff(inst.defId);
       if (def && def.effect[field] != null) {
         const per = inst.per != null ? inst.per : def.effect[field];
@@ -128,9 +129,15 @@ const Buffs = {
           per, stacks: inst.stacks,
           total: def.stack === "duration" ? per : per * inst.stacks,
           stack: def.stack, confirmed: def.confirmed,
-          from: "buff"
+          from: def.shared ? "buff·队伍共享" : "buff"
         });
       }
+    };
+    for (const inst of unit.buffs) grab(inst);
+    /* 共享 buff（力量/戒备）挂队伍级一份（2026-10-05 用户实测修正）：我方单位合并读取=全队生效 */
+    const b = State.battle;
+    if (unit.side === "ally" && b && b.team && b.team !== unit && Array.isArray(b.team.buffs)) {
+      for (const inst of b.team.buffs) grab(inst);
     }
     return mods;
   },

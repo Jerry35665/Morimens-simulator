@@ -212,6 +212,8 @@ const Turn = {
 
     /* 3. 我方 buff 衰减与回合结束触发 */
     for (const a of b.allies) Buffs.tickTurnEnd(a);
+    /* 队伍共享 buff（力量/戒备，挂 b.team.buffs 一份）同回合衰减（T50 修正） */
+    if (Array.isArray(b.team.buffs) && b.team.buffs.length) Buffs.tickTurnEnd(b.team);
 
     /* 4. 护盾移除（gamekee新手指南：护盾在回合结束时自动移除） */
     for (const u of [...b.allies, ...b.enemies]) {

@@ -28,6 +28,19 @@ function check(name, cond, extra = "") {
 }
 window.alert = (m) => { throw new Error("alert: " + m); };
 
+/* 共享 buff（力量/戒备）2026-10-05 起挂队伍容器 b.team.buffs 一份（不每人重复）——测试读取/清理 helper */
+function __buff(unit, defId) {
+  const own = (unit.buffs || []).find(x => x.defId === defId);
+  if (own) return own;
+  const team = State.battle && State.battle.team;
+  return (team && unit.side === "ally" && Array.isArray(team.buffs)) ? team.buffs.find(x => x.defId === defId) : null;
+}
+function __clearBuffs(unit) {
+  unit.buffs = [];
+  const team = State.battle && State.battle.team;
+  if (team && Array.isArray(team.buffs)) team.buffs = [];
+}
+
 function runAllTests() {
   localStorage.clear();   // 测试期间清空（真实数据已在 __userBackup，结束后恢复）
   State.keeperLv = 1;
@@ -386,7 +399,7 @@ function runAllTests() {
     Damage.deal({ source: c, target: tgt, card: null, eff: { value: 477 }, label: "t" });
     check("力量+98 → 伤害恰好+98（不吃强效）", before - tgt.hp === 477 + 98,
       "实扣:" + (before - tgt.hp) + "（预期575）");
-    c.buffs = [];
+    __clearBuffs(c);
     // 暴击：×(1+暴击伤害%)
     c.stats.critRate = 100; c.stats.critDmg = 115;
     tgt.hp = 999999; tgt.shield = 0;
@@ -400,7 +413,7 @@ function runAllTests() {
     check("力量在暴击乘区前：477+98 → ×2.15", (() => {
       Buffs.add(c, "buff_strength", 98, null, "test", 1);
       const rr = Damage.compute({ source: c, target: tgt, eff: { value: 477 }, crit: true });
-      c.buffs = [];
+      __clearBuffs(c);
       return Math.abs(rr.final - Math.ceil((477 + 98) * 2.15)) <= 2 ? "✓ " + rr.final : "✗ " + rr.final;
     })());
   }
@@ -463,18 +476,18 @@ function runAllTests() {
     check("临时暴击率+暴伤并入判定", (() => {
       const tgt = b.enemies.find(e => e.hp > 0);
       tgt.hp = 999999; tgt.shield = 0;
-      rc.buffs = [];   // 清掉脑中之音偷取的永久力量，隔离变量
+      __clearBuffs(rc); __clearBuffs(rc);   // 清掉脑中之音偷取的永久力量（含共享容器），隔离变量
       rc.stats.critRate = 0; rc.stats.critDmg = 50;
       Buffs.add(rc, "buff_crit_up", 1, null, "t", 100);
       Buffs.add(rc, "buff_critdmg_up", 1, null, "t", 30);
       const r = Damage.deal({ source: rc, target: tgt, card: null, eff: { value: 100 }, label: "t" });
-      rc.buffs = [];
+      __clearBuffs(rc);
       return r.crit === true && Math.abs(r.final - Math.ceil(100 * 1.8)) <= 1;
     })());
     check("临时伤害强效并入强效区(面板0+50%)", (() => {
       Buffs.add(rc, "buff_boost_up", 1, null, "t", 50);
       const r = Damage.compute({ source: rc, target: b.enemies.find(e => e.hp > 0), eff: { value: 100 } });
-      rc.buffs = [];
+      __clearBuffs(rc);
       return Math.abs(r.final - Math.ceil(100 * 1.5)) <= 1;
     })());
 
@@ -834,13 +847,13 @@ function runAllTests() {
     a12.fatewheels = ["fw_ocean_call"];
     w4.energy = 5;
     Turn.startBattle();   // 开战钩子：深海的呼唤 str8
-    check("T8三 深海的呼唤 开战力量+8(攻100×8%)", a12.buffs.some(x => x.defId === "buff_strength" && x.per === 8));
+    check("T8三 深海的呼唤 开战力量+8(攻100×8%)", (() => { const bi = __buff(a12, "buff_strength"); return !!bi && bi.per === 8; })());
     a12.fatewheels = ["fw_duty_call", "fw_friend_reunion", "fw_hot_farewell"];
     a12.guku = 100;
     Wheels.onBurst(a12, 100);   // 直调爆发钩子（mock 无爆发卡定义，releaseBurst 走不通）
     check("T8三 职责所在 爆发全员+5狂气", w4.allies.every(x => x.guku >= 5));
     check("T8三 致挚友 爆发全体暴击率+25%", a12.buffs.some(x => x.defId === "buff_crit_up" && x.per === 25));
-    check("T8三 灼热的吻别 爆发力量+3(攻100×3%)", a12.buffs.some(x => x.defId === "buff_strength" && x.per === 3));
+    check("T8三 灼热的吻别 爆发力量+3(攻100×3%)", (() => { const bi = __buff(a12, "buff_strength"); return !!bi && bi.per === 3; })());
     /* 命轮加卡（真实角色卡数据）：坚韧意志 → 希洛牌库 打击/防御 各+1 */
     State.newBattle();
     const h12 = State.addAlly("char_helot_catena", 80);
@@ -919,10 +932,13 @@ function runAllTests() {
     Wheels.onStrikePlay({ name: "打击", type: "攻击" }, a13);
     check("T8四 切割与伤害 打击降力12", e13.buffs.some(x => x.defId === "debuff_strength_down" && x.per === -12));
     a13.fatewheels = ["fw_adventure_pack"];
-    const g0 = a13.buffs.filter(x => x.defId === "buff_strength").length;
+    const gTeam = __buff(a13, "buff_strength");
+    const g0 = gTeam ? gTeam.stacks : 0;   // 共享实例挂队伍容器：按 stacks 增量计数（2026-10-05 口径）
     Wheels.onStrikePlay({ name: "基础防御", type: "防御" }, a13);
-    check("T8四 冒险的行囊 打防御力量+18", a13.buffs.some(x => x.defId === "buff_strength" && x.per === 18)
-      && a13.buffs.filter(x => x.defId === "buff_strength").length === g0 + 1);
+    check("T8四 冒险的行囊 打防御力量+18", (() => {
+      const bi = __buff(a13, "buff_strength");
+      return !!bi && bi.per === 18 && bi.stacks === g0 + 1;
+    })());
     /* 迫近的太阳：5张卡→20%暴击 */
     a13.fatewheels = ["fw_nearing_sun"];
     for (let i = 0; i < 5; i++) Wheels.onAnyPlay({ name: "测试卡" + i, type: "技能" }, a13);
@@ -1199,12 +1215,12 @@ function runAllTests() {
     /* ① 力量点数=层数×1点（perCalcAtkPct 点数转层数） */
     Cards.resolveEffect({ op: "buff", buffId: "buff_strength", perCalcAtkPct: { base: 10 }, stacks: 1, target: "self" }, a21, null, { name: "测试" });
     const expLayers = Math.max(1, Math.round(a21.attack * 0.1));
-    const str21 = a21.buffs.find(x => x.defId === "buff_strength");
+    const str21 = __buff(a21, "buff_strength");
     check("T32实测 力量点数=层数×1点", str21 && str21.stacks === expLayers && str21.per === 1,
       "层数:" + (str21 ? str21.stacks : "无") + " 预期:" + expLayers);
-    /* ② 全队共享：队友同获力量 */
-    const strMate = a21b.buffs.find(x => x.defId === "buff_strength");
-    check("T32实测 力量全队共享（队友同层）", strMate && strMate.stacks === expLayers);
+    /* ② 全队共享：队友同享（共享实例挂队伍容器一份，两单位 collect 均含） */
+    const strMate = __buff(a21b, "buff_strength");
+    check("T32实测 力量全队共享（队友同层）", strMate && strMate.stacks === expLayers && strMate === str21);
     /* ③ 回合 buff 层数模型：1 回合=1 层，每回合 -1 */
     Buffs.add(a21, "debuff_vul", 3, 3, "测试");
     const vul21 = a21.buffs.find(x => x.defId === "debuff_vul");
@@ -1715,11 +1731,11 @@ function runAllTests() {
     State.addEnemy(dummyId);
     Turn.startBattle();
     check("T41 艾瑞卡 开战力量=ceil(攻×15%)",
-      (() => { const b = eri.buffs.find(x => x.defId === "buff_strength"); return !!b && b.stacks === Math.ceil((eri.stats.attack || 0) * 15 / 100); })(),
-      "实际:" + ((eri.buffs.find(x => x.defId === "buff_strength") || {}).stacks));
+      (() => { const b = __buff(eri, "buff_strength"); return !!b && b.stacks === Math.ceil((eri.stats.attack || 0) * 15 / 100); })(),
+      "实际:" + ((__buff(eri, "buff_strength") || {}).stacks));
     check("T41 艾瑞卡 开战戒备=ceil(防×3%)",
-      (() => { const g = eri.buffs.find(x => x.defId === "buff_guard"); return !!g && g.stacks === Math.ceil((eri.stats.defense || 0) * 3 / 100); })(),
-      "实际:" + ((eri.buffs.find(x => x.defId === "buff_guard") || {}).stacks));
+      (() => { const g = __buff(eri, "buff_guard"); return !!g && g.stacks === Math.ceil((eri.stats.defense || 0) * 3 / 100); })(),
+      "实际:" + ((__buff(eri, "buff_guard") || {}).stacks));
     /* ② 环行·拉蒙娜：开战银钥能量=银充×250% */
     State.newBattle();
     const ram = State.addAlly("char_ramona_timeworn"); ram.spiritAdaptLv = 10; strip(ram);
@@ -2249,9 +2265,9 @@ function runAllTests() {
     State.addEnemy("enemy_dummy");
     State.levelRelicDeck = [DBF.levelRelics.find(x => x.name === "红宝石胸针").id];
     Turn.startBattle();
-    check("T50: 开战力量（红宝石胸针 +78 点 buff_strength）", (() => {
-      const bi = (lrAlly.buffs || []).find(x => x.defId === "buff_strength");
-      return bi && bi.per === 78;
+    check("T50: 开战力量（红宝石胸针 +78 点 buff_strength，共享一份挂血条下）", (() => {
+      const bi = __buff(lrAlly, "buff_strength");
+      return bi && bi.per === 78 && State.battle.team.buffs.length === 1;   // 恰好一份，不每人重复
     })());
     State.levelRelicDeck = [
       DBF.levelRelics.find(x => x.name === "定向罗盘").id,

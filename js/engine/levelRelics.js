@@ -75,9 +75,10 @@ window.LevelRelics = {
       const m = d.mods && d.mods.battleStart;
       if (!m) continue;
       const tag = `关卡造物·${d.name}`;
-      if (m.strength) for (const a of b.allies) {
-        Buffs.add(a, "buff_strength", 1, null, tag, m.strength);
-        Log.add(`🏺 ${tag}：${a.def.name} 战斗开始获得 ${m.strength} 点力量`, "good");
+      /* 力量=共享 buff：单次挂即全队一份（b.team.buffs，2026-10-05 用户实测口径），勿循环每人 */
+      if (m.strength) {
+        Buffs.add(b.allies[0], "buff_strength", 1, null, tag, m.strength);
+        Log.add(`🏺 ${tag}：全体唤醒体战斗开始获得 ${m.strength} 点力量（共享一份）`, "good");
       }
       if (m.shield) for (const a of b.allies) {
         Damage.addShield(a, m.shield, tag);
@@ -178,9 +179,9 @@ window.LevelRelics = {
       if (m.draw) { Cards.draw(m.draw); Log.add(`🏺 ${tag}：银钥觉醒后抽 ${m.draw} 张`, "good"); }
       if (m.energy) { b.energy += m.energy; Log.add(`🏺 ${tag}：银钥觉醒后算力 +${m.energy}`, "good"); }
       if (m.silver) { b.silver += m.silver; Log.add(`🏺 ${tag}：银钥觉醒后银钥能量 +${m.silver}`, "good"); }
-      if (m.strength) for (const a of b.allies) {
-        Buffs.add(a, "buff_strength", 1, null, tag, m.strength);
-        Log.add(`🏺 ${tag}：${a.def.name} 银钥觉醒后力量 +${m.strength}`, "good");
+      if (m.strength) {
+        Buffs.add(b.allies[0], "buff_strength", 1, null, tag, m.strength);
+        Log.add(`🏺 ${tag}：全体唤醒体银钥觉醒后力量 +${m.strength}（共享一份）`, "good");
       }
       if (m.shield) for (const a of b.allies) { Damage.addShield(a, m.shield, tag); }
       if (m.shield) Log.add(`🏺 ${tag}：银钥觉醒后全体护盾 +${m.shield}`, "good");
@@ -252,9 +253,10 @@ window.Sigils = {
       a.guku = Math.min(a.gukuMax || 100, a.guku + m.gukuOthers);
     }
     if (m.gukuOthers) Log.add(`📿 ${tag}：其他唤醒体狂气 +${m.gukuOthers}`, "good");
-    if (m.weakAll && b.enemies.length) { Buffs.add(b.enemies[0], "debuff_weak", m.weakAll, null, tag); Log.add(`📿 ${tag}：虚弱所有敌人 ${m.weakAll} 回合`, "good"); }
-    if (m.vulnAll && b.enemies.length) { Buffs.add(b.enemies[0], "debuff_vul", m.vulnAll, null, tag); Log.add(`📿 ${tag}：易伤所有敌人 ${m.vulnAll} 回合`, "good"); }
-    if (m.poisonAll && b.enemies.length) { Buffs.add(b.enemies[0], "debuff_poison", m.poisonAll, null, tag); Log.add(`📿 ${tag}：所有敌人中毒 +${m.poisonAll} 层`, "good"); }
+    /* debuff 无 shared（T37⑮）——「所有敌人」须逐个施加（2026-10-05 修正：原只挂首个敌人） */
+    if (m.weakAll) { for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_weak", m.weakAll, null, tag); Log.add(`📿 ${tag}：虚弱所有敌人 ${m.weakAll} 回合`, "good"); }
+    if (m.vulnAll) { for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_vul", m.vulnAll, null, tag); Log.add(`📿 ${tag}：易伤所有敌人 ${m.vulnAll} 回合`, "good"); }
+    if (m.poisonAll) { for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_poison", m.poisonAll, null, tag); Log.add(`📿 ${tag}：所有敌人中毒 +${m.poisonAll} 层`, "good"); }
     if (m.drainTempStrAll) {
       let total = 0;
       for (const e of b.enemies) {

@@ -719,7 +719,7 @@ const State = {
       enemies: [],
       piles: { draw: [], hand: [], discard: [], exhaust: [] },
       aiIndex: {},
-      team: { hp: 0, maxHp: 0, resources: { furnace: 0 } },   // 我方共享生命 + 队伍公共资源
+      team: { hp: 0, maxHp: 0, buffs: [], resources: { furnace: 0 } },   // 我方共享生命 + 队伍共享buff（力量/戒备挂一份，T50 修正）+ 队伍公共资源
       teamStats: {},
       energy: 0,
       silver: 0,

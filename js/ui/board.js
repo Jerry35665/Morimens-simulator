@@ -47,7 +47,14 @@ const UIBoard = {
     fill.style.width = pct + "%";
     text.textContent = `队伍生命 ${b.team.hp} / ${b.team.maxHp}`;
     const teamShield = b.allies.reduce((s, a) => s + a.shield, 0);
-    if (shieldChip) shieldChip.innerHTML = teamShield > 0 ? `<span class="shield-chip">🛡 全队护盾合计 ${teamShield}</span>` : "";
+    /* 队伍共享 buff（力量/戒备）渲染在共享血条下一份（2026-10-05 用户实测口径） */
+    const sharedIcons = (Array.isArray(b.team.buffs) ? b.team.buffs : []).map(inst => {
+      const def = State.getBuff(inst.defId);
+      if (!def) return "";
+      const durTxt = inst.duration != null ? `（${inst.duration}回合）` : "";
+      return `<span class="buff-icon ${def.kind === "debuff" ? "debuff" : ""}" title="【全队共享·挂在血条下】${def.desc}">${def.icon}<span class="stk">×${inst.stacks}</span>${durTxt}</span>`;
+    }).join("");
+    if (shieldChip) shieldChip.innerHTML = (teamShield > 0 ? `<span class="shield-chip">🛡 全队护盾合计 ${teamShield}</span>` : "") + sharedIcons;
   },
 
   /* 我方角色卡（竖列） */
@@ -107,10 +114,11 @@ const UIBoard = {
     if (u.omenLv) gearBits.push(`预兆${u.omenLv}`);
     if (gearBits.length) html += `<div class="u-gear dim">◈ ${gearBits.join(" · ")}</div>`;
 
-    /* buff 图标行 */
+    /* buff 图标行（共享 buff 挂血条下一份，不在此重复显示——2026-10-05 用户实测口径） */
     html += `<div class="buff-row">`;
-    for (const inst of u.buffs) html += this._buffIcon(u, inst);
-    if (!u.buffs.length) html += `<span class="dim" style="font-size:11px">无状态</span>`;
+    const ownBuffs = (u.buffs || []).filter(i => { const d = State.getBuff(i.defId); return !d || !d.shared; });
+    for (const inst of ownBuffs) html += this._buffIcon(u, inst);
+    if (!ownBuffs.length) html += `<span class="dim" style="font-size:11px">无状态</span>`;
     html += `</div>`;
 
     el.innerHTML = html;
@@ -167,8 +175,9 @@ const UIBoard = {
       html += `<div class="intent" style="color:var(--text-dim)">被动：${u.def.passives.join("；")}</div>`;
 
     html += `<div class="buff-row">`;
-    for (const inst of u.buffs) html += this._buffIcon(u, inst);
-    if (!u.buffs.length) html += `<span class="dim" style="font-size:11px">无状态</span>`;
+    const ownBuffsE = (u.buffs || []).filter(i => { const d = State.getBuff(i.defId); return !d || !d.shared; });
+    for (const inst of ownBuffsE) html += this._buffIcon(u, inst);
+    if (!ownBuffsE.length) html += `<span class="dim" style="font-size:11px">无状态</span>`;
     html += `</div>`;
 
     el.innerHTML = html;

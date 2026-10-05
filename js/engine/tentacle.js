@@ -70,12 +70,13 @@ const Tentacle = {
       if (chaosN > 0 && baseHp > 0) symbiosis = baseHp * 0.01 * chaosN;
     }
     /* 「触腕伤害加一半的力量」（E6 机制发现B：32力量→+16触伤）：当前力量合计×0.5
-     * T32 实测批：力量为全队共享 buff——共享实例只计一次（否则按队员数重复累加） */
+     * T32 实测批：力量为全队共享 buff——共享实例只计一次（否则按队员数重复累加）
+     * 2026-10-05 用户实测修正：共享实例挂 b.team.buffs 一份（不每人重复）→ 触腕天然只吃一次 */
     let power = 0;
     const seenShared = new Set();
-    for (const a of b.allies) {
-      if (!a.buffs) continue;
-      for (const inst of a.buffs) {
+    const grabPower = (buffs) => {
+      if (!buffs) return;
+      for (const inst of buffs) {
         const def = State.getBuff(inst.defId);
         if (!def || def.effect.damageFlat == null) continue;
         if (def.shared) {
@@ -85,7 +86,9 @@ const Tentacle = {
         const per = inst.per != null ? inst.per : def.effect.damageFlat;
         power += per * inst.stacks;
       }
-    }
+    };
+    for (const a of b.allies) grabPower(a.buffs);
+    grabPower(b.team && b.team.buffs);
     /* 临时触腕伤害（T32 实测批：螺湮圆舞潮涌等「触腕伤害+[攻×X%]」）——加算点数，⚠加算位置未经实测，估算入基础段 */
     const tempDmg = this._tempDmgSum();
     const main = pool * 0.095 * (1 + boost / 100);
