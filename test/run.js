@@ -2440,6 +2440,99 @@ function runAllTests() {
     State.reset();
   }
 
+  console.log("== 8.37 钥令 2026-10-05 补录批（24 条新增 + 4 新 op + 2 衍生卡）==");
+  {
+    check("入库总数: 钥令 53 条", DBF.yogens.length === 53, "实际:" + DBF.yogens.length);
+    check("补录批 24 条全带效果数组", DBF.yogens.slice(29).every(y => Array.isArray(y.eff) && y.eff.length > 0));
+    check("衍生卡入库: 莉雅的硬币(建模)+闪耀偏方骰(占位)", !!State.getCard("shared_leya_coin") && !!State.getCard("shared_dice") && State.getCard("shared_leya_coin").effects.length === 2 && State.getCard("shared_dice").effects.length === 0);
+
+    State.reset();
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addAlly("char_ogilvy", 1);
+    State.addEnemy("enemy_dummy");
+    State.setCarriedYogen("yg_inject_guard");
+    Turn.startBattle();
+    const b = State.battle;
+    const doll = b.allies[0], og = b.allies[1];
+    /* 钥令释放环境 helper：forgotten 路径要求本回合已释放 1 次（每回合第 2 次限制） */
+    const castNew = (id, ch) => { b.silver = 1000; b.yogenCastsThisTurn = 1; return Yogens.cast(id, { via: "forgotten", choice: ch }); };
+
+    check("群山的觉悟: drawOwner 抽 2 张朵尔的指令卡", (() => {
+      b.piles.draw = []; b.piles.hand = [];
+      const def = DBF.cards.find(c => c.owner === "char_doll");
+      b.piles.draw.push(Cards.inst(def.id, false), Cards.inst(def.id, false));
+      const other = DBF.cards.find(c => c.owner === "char_ogilvy");
+      b.piles.draw.push(Cards.inst(other.id, false));
+      castNew("yg_mountain_awake", { allyUid: doll.uid });
+      return b.piles.hand.length === 2 && b.piles.hand.every(i => State.getCard(i.defId).owner === "char_doll");
+    })(), "手:" + b.piles.hand.length);
+
+    check("小小心愿: guku pick +35", (() => { doll.guku = 0; castNew("yg_tiny_wish", { allyUid: doll.uid }); return doll.guku === 35; })(), "guku:" + doll.guku);
+    check("鼠鼠的智慧: 算力 +3", (() => { b.energy = 0; castNew("yg_mouse_wisdom"); return b.energy === 3; })(), "energy:" + b.energy);
+
+    check("纯白初遇: 弃全部手牌+抽 n+2", (() => {
+      b.piles.hand = [Cards.inst("shared_inspire", false), Cards.inst("shared_vul_mark", false)];
+      b.piles.draw = [];
+      const d0 = DBF.cards.find(c => c.owner === "char_doll");
+      b.piles.draw.push(Cards.inst(d0.id, false), Cards.inst(d0.id, false), Cards.inst(d0.id, false), Cards.inst(d0.id, false));
+      b.piles.discard = [];
+      castNew("yg_white_first");
+      return b.piles.discard.length === 2 && b.piles.hand.length === 4;
+    })(), "弃:" + b.piles.discard.length + " 手:" + b.piles.hand.length);
+
+    check("一声枪响: 闪耀偏方骰置手+全体临时暴击率15", (() => {
+      b.piles.hand = [];
+      castNew("yg_gunshot");
+      const diceInHand = b.piles.hand.some(i => i.defId === "shared_dice");
+      const crit = Buffs.collect(doll, "critRateFlat").reduce((s2, m) => s2 + (m.total || 0), 0);
+      return diceInHand && crit >= 15;
+    })(), "骰在手:" + b.piles.hand.some(i => i.defId === "shared_dice") + " crit:" + Buffs.collect(doll, "critRateFlat").reduce((s2, m) => s2 + (m.total || 0), 0));
+
+    check("酒馆之门: 莉雅的硬币置入弃牌堆", (() => {
+      b.piles.discard = [];
+      castNew("yg_tavern_door");
+      return b.piles.discard.length === 1 && b.piles.discard[0].defId === "shared_leya_coin";
+    })(), "弃:" + JSON.stringify(b.piles.discard.map(i => i.defId)));
+
+    check("虚世之彩: 灵感洗入抽牌堆+选定狂气20", (() => {
+      b.piles.draw = []; doll.guku = 0;
+      castNew("yg_falseworld_color", { allyUid: doll.uid });
+      return b.piles.draw.some(i => i.defId === "shared_inspire") && doll.guku === 20;
+    })(), "draw堆:" + JSON.stringify(b.piles.draw.map(i => i.defId)));
+
+    check("溺亡的纯真: 选定+15 其他+5", (() => {
+      doll.guku = 0; og.guku = 0;
+      castNew("yg_drowned_purity", { allyUid: doll.uid });
+      return doll.guku === 15 && og.guku === 5;
+    })(), "朵:" + doll.guku + " 奥:" + og.guku);
+
+    check("不落的太阳: 算力+1+临时强效30", (() => {
+      b.energy = 0;
+      castNew("yg_undying_sun");
+      const boost = Buffs.collect(doll, "damageBoostPct").reduce((s2, m) => s2 + (m.total || 0), 0);
+      return b.energy === 1 && boost >= 30;
+    })(), "energy:" + b.energy + " boost:" + Buffs.collect(doll, "damageBoostPct").reduce((s2, m) => s2 + (m.total || 0), 0));
+
+    check("错位命运: 狂气+15+抽2张最低费", (() => {
+      doll.guku = 0;
+      castNew("yg_displaced_fate", { allyUid: doll.uid });
+      return doll.guku === 15 && b.piles.hand.length >= 2;
+    })(), "guku:" + doll.guku);
+
+    check("莉雅的硬币打出: 算力+2+抽2张", (() => {
+      b.energy = 0;
+      const coin = Cards.inst("shared_leya_coin", false);
+      b.piles.hand = [coin];
+      const d0 = DBF.cards.find(c => c.owner === "char_doll");
+      b.piles.draw = [Cards.inst(d0.id, false), Cards.inst(d0.id, false)];
+      Cards.play(coin.uid);
+      return b.energy === 2 && b.piles.hand.length === 2;
+    })(), "energy:" + b.energy + " 手:" + b.piles.hand.length);
+
+    State.reset();
+  }
+
   renderSummary();
 }
 

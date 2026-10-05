@@ -236,6 +236,44 @@ const Yogens = {
           break;
         }
 
+        /* 溺亡的纯真（2026-10-05 补录批）：选定者以外的唤醒体获得狂气 */
+        case "gukuOthers": {
+          const picked = this._pickAlly(ch);
+          for (const a of b.allies) {
+            if (a === picked) continue;
+            a.guku = Math.min(a.gukuMax || 100, a.guku + v);
+          }
+          Log.add(`💫 其他唤醒体狂气 +${v}`, "good");
+          break;
+        }
+
+        /* 群山的觉悟（2026-10-05 补录批）：从抽牌堆抽该唤醒体的指令卡 */
+        case "drawOwner": {
+          const t = this._pickAlly(ch);
+          if (!t) break;
+          const want = Math.min(v, Cards.HAND_LIMIT - b.piles.hand.length);
+          let got = 0;
+          for (let i = b.piles.draw.length - 1; i >= 0 && got < want; i--) {
+            if ((State.getCard(b.piles.draw[i].defId) || {}).owner === t.def.id) {
+              const [c] = b.piles.draw.splice(i, 1);
+              b.piles.hand.push(c);
+              got++;
+              Log.add(`抽到 <b>${Cards.def(c).name}</b>（${t.def.name} 的指令卡）`, "sys");
+            }
+          }
+          if (got < v) Log.add(`<span class="dim">牌堆中该唤醒体的牌不足（抽到 ${got}/${v}）</span>`, "sys");
+          break;
+        }
+
+        /* 纯白初遇（2026-10-05 补录批）：弃掉全部手牌，抽取弃掉数量 +2 的牌 */
+        case "discardHandDraw": {
+          const thrown = b.piles.hand.splice(0);
+          for (const inst of thrown) b.piles.discard.push(inst);
+          Log.add(`💫 弃掉全部手牌 ${thrown.length} 张，抽取 ${thrown.length + 2} 张`, "good");
+          if (thrown.length > 0) Cards.draw(thrown.length + 2);
+          break;
+        }
+
         case "energy":
           /* 星辰篇·算力满盈（T48）：钥令加算力同样可超 12，超出转 300% 队伍平均银充的银钥 */
           if (State.starEnv) {
@@ -320,6 +358,12 @@ const Yogens = {
           break;
 
         case "cardGen": {
+          /* target 扩展（2026-10-05 补录批）：discard=酒馆之门置入弃牌堆、draw=虚世之彩洗入抽牌堆 */
+          if (e.target === "discard" || e.target === "draw") {
+            for (let i = 0; i < (e.v || 1); i++) b.piles[e.target].push(Cards.inst(e.cardId, false));
+            Log.add(`💫 <b>${State.getCard(e.cardId).name}</b> ×${e.v || 1} 置入${e.target === "draw" ? "抽牌堆（洗入）" : "弃牌堆"}`, "good");
+            break;
+          }
           const n = Math.min(e.v || 1, Cards.HAND_LIMIT - b.piles.hand.length);
           for (let i = 0; i < n; i++) b.piles.hand.push(Cards.inst(e.cardId, false));
           if (n > 0) Log.add(`💫 <b>${State.getCard(e.cardId).name}</b> ×${n} 置入手牌`, "good");
