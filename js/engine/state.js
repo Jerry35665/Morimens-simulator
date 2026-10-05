@@ -156,6 +156,74 @@ const State = {
     char_ramona: { silverKeyFlat: 2.5 },
   },
 
+  /* ---- T55 启灵卡牌修正表（2026-10-06，wiki enlighten 文本逐条解析；先框架后按用户常用队列分批） ----
+   * {charId: [{lv:1|2|3, cards:[卡名], dmgPct, blockPct, blockFlat, guku, gukuPct, retain, healPct,
+   *            onPlayCrit(临时暴击率%), onPlayCritDmg(临时暴伤%), onPlayStrPct(攻%临时力量), onPlayTentaclePct(攻%临时触伤), note}]}
+   * 生效条件=unit.enlightenOn[lv-1]===true（启灵可手动开关）+出牌者匹配。
+   * 消费点：dmgPct→spirit.mergeCombat basePlain 组；blockPct/blockFlat→cards resolve block；
+   *         guku/gukuPct→cards resolve guku；healPct→cards resolve heal；retain→Cards.discardHand；
+   *         onPlay*→cards.js play 尾（talentOnPlay 同位置）。
+   * 未录条目（依赖未建模机制/复合条件/目标卡未入库）见 DATA-TODO「启灵残留」行 */
+  ENLIGHTEN_CARD_MODS: {
+    char_c06:  [ { lv: 1, cards: ["纷乱切割"], dmgPct: 33, note: "人格条件段未建模" } ],
+    char_o04:  [ { lv: 1, cards: ["破碎沉戟"], onPlayGuku: 20, note: "附加效果（卡无自带狂气 op），随卡等级提升未建模" },
+                 { lv: 2, cards: ["逆鳞之护"], blockPct: 20, retain: true } ],
+    char_c16:  [ { lv: 1, cards: ["打击", "基础打击", "防御", "基础防御"], dmgPct: 50, blockPct: 50, gukuPct: 50, note: "卡面写「打击」「防御」——含基础版近似" } ],
+    char_ogilvy: [ { lv: 1, cards: ["穿刺之枪"], dmgPct: 100, note: "易伤+1/力量倍数+1 段未建模" },
+                   { lv: 2, cards: ["七艺，传承美德"], blockPct: 20, note: "临时力量+20%/脆弱条件段未建模" },
+                   { lv: 3, cards: ["不定壁垒"], blockPct: 43, note: "力量攻4%段未建模（随卡级 8%）" } ],
+    char_o02:  [ { lv: 1, cards: ["螺湮逆流"], retain: true, note: "每2触腕额外1次伤害未建模" },
+                 { lv: 2, cards: ["基础打击", "基础防御"], onPlayTentaclePct: 2, note: "随卡级满级4%" } ],
+    char_rotan: [ { lv: 1, cards: ["打击", "基础打击"], dmgPct: 30, note: "桀骜之刃视为打击段=isStrikeCard 文本命中已覆盖" } ],
+    char_rotan_cetarchon: [ { lv: 1, cards: ["打击", "基础打击"], dmgPct: 20, note: "暴击率+10%/黑印联动段未建模" } ],
+    char_c10:  [ { lv: 2, cards: ["报偿打击"], dmgPct: 20, note: "暴击率+20%/预备2未建模" } ],
+    char_o08:  [ { lv: 3, cards: ["失落的艺术"], dmgPct: 25, blockPct: 25, note: "暴击加成段未建模" } ],
+    char_agrippa: [ { lv: 3, cards: ["苍白回旋"], dmgPct: 50, note: "胚胎融合段未建模" } ],
+    char_b08:  [ { lv: 1, cards: ["苦痛与欢愉"], dmgPct: 100, retain: true, note: "穿刺段未建模" },
+                 { lv: 2, cards: ["未被满足之痛"], guku: 10 } ],
+    char_doll_inferno: [ { lv: 3, cards: ["基础打击", "基础防御"], guku: 5, note: "「5%狂气上限」按100×5%=5点近似" } ],
+    char_b14:  [ { lv: 2, cards: ["打击", "基础打击", "防御", "基础防御"], guku: 15, note: "共振词条以直接狂气近似" } ],
+    char_b11:  [ { lv: 1, cards: ["粉雪魔咒"], guku: 10, note: "固定伤害+30%/界域精通联动段未建模" } ],
+    char_doll: [ { lv: 2, cards: ["等价交换"], healPct: 20, note: "弃牌附盾段未建模；lv1 外域手术已由 8.24 锚点批硬编码" } ],
+    char_helot_catena: [ { lv: 1, cards: ["基础打击"], onPlayCrit: 15, onPlayCritDmg: 15, note: "基础防御出血段未建模；lv3 置卡+破盾未建模（卡未入库）" } ],
+    char_d12:  [ { lv: 1, cards: ["基础打击", "基础防御"], onPlayStrPct: 15, note: "乐音翻倍条件未建模" } ],
+    char_tulu: [ { lv: 2, cards: ["基础打击", "基础防御"], onPlayStrPct: 6, note: "临时触腕伤害段未建模（随卡级12%）" } ],
+    char_b01:  [ { lv: 3, cards: ["基础打击", "基础防御"], onPlayStrPct: 3 } ],
+    char_b05:  [ { lv: 2, cards: ["基础防御"], onPlayCrit: 25 } ],
+  },
+
+  /* T55 启灵回合结束触发（消费点 turn.js endTurn，enlightenOn 门控） */
+  ENLIGHTEN_TURN_END: {
+    char_c06: { lv: 3, guku: 10, note: "每爆发后递增+1 段未建模" },
+    char_tulu: { lv: 3, guku: 5, note: "螺湮重临暴击率段未建模" },
+    char_o02: { lv: 3, guku: 5, note: "钥令献祭段未建模" },
+    char_o04: { lv: 3, healPctCon: 7.5 },
+  },
+
+  /* helper：收集某单位某卡当前生效的启灵修正条目 */
+  enlightenMods(unit, cardName) {
+    if (!unit || !unit.def || !cardName) return [];
+    const arr = this.ENLIGHTEN_CARD_MODS[unit.def.id];
+    if (!arr) return [];
+    const on = unit.enlightenOn || [];
+    return arr.filter(e => e.cards && e.cards.includes(cardName) && on[e.lv - 1] === true);
+  },
+
+  /* T55 启灵回合结束触发（turn.js endTurn 调用；测试可直调） */
+  enlightenTurnEnd(b) {
+    if (!b || !this.ENLIGHTEN_TURN_END) return;
+    for (const a of b.allies) {
+      const cfg = this.ENLIGHTEN_TURN_END[a.def && a.def.id];
+      if (!cfg || !(a.enlightenOn || [])[cfg.lv - 1]) continue;
+      if (cfg.guku) { a.guku = Math.min(a.gukuMax || 100, a.guku + cfg.guku); Log.add(`🌟 启灵【${a.def.name}】：回合结束狂气 +${cfg.guku}（${a.guku}/${a.gukuMax}）`, "good"); }
+      if (cfg.healPctCon) {
+        const con = a.stats && (a.stats.constitutionCombat || a.stats.constitution) || 0;
+        const hv = Math.ceil(con * cfg.healPctCon / 100);
+        if (hv > 0) Damage.heal(a, hv, `启灵·${a.def.name}（体质${cfg.healPctCon}%）`);
+      }
+    }
+  },
+
   /* ---- T40 天赋钩子消费助手（挂点：damage.js ②.5 / cards.js play+guku / collectStatMods） ---- */
   talentAttr(unit, attr) { return (unit && unit.stats && unit.stats[attr]) || 0; },
 

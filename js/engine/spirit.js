@@ -70,6 +70,12 @@ const Spirit = {
       if (sp.strikeTeam && isStrike) groups.strike.pct += this._v(sp.strikeTeam, l);
       if (sp.cardBasePlain && a === source && sp.cardBasePlain.card === name) groups.basePlain.pct += this._v(sp.cardBasePlain.pct, l);
     }
+    /* T55 启灵卡牌修正：指定卡「基础伤害提高X%」→ basePlain 组（同措辞组内加算） */
+    if (typeof State.enlightenMods === "function") {
+      for (const em of State.enlightenMods(source, name)) {
+        if (em.dmgPct) groups.basePlain.pct += em.dmgPct;
+      }
+    }
   },
 
   /* ---- ⑥.5 最终伤害区追加（莉莉：「打击」最终伤害提高，首领战翻倍） ---- */

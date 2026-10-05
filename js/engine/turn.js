@@ -218,6 +218,8 @@ const Turn = {
     if (typeof Wheels !== "undefined") Wheels.onTurnEnd();
     /* 关卡造物回合末效果（T50）：恩赐之血回血/失衡的天平手牌狂气（弃牌前，「回合结束前手中每张」语义） */
     if (typeof LevelRelics !== "undefined") LevelRelics.onTurnEnd();
+    /* 启灵回合结束触发（T55）：ENLIGHTEN_TURN_END（guku 固定/healPctCon 体质%）——函数在 state.js（测试直调） */
+    if (typeof State.enlightenTurnEnd === "function") State.enlightenTurnEnd(b);
     /* 超维回合结束（维度跃迁：-25% 效果仅超维回合内） */
     if (typeof RealmSys !== "undefined") RealmSys.onTurnEnd();
 
@@ -266,7 +268,11 @@ const Turn = {
     const keep = [];
     for (const inst of [...b.piles.hand]) {
       const def = Cards.def(inst);
-      if (def.retain || inst.retainInst) { keep.push(inst); Log.add(`${def.name}（保留）留在了手中`, "sys"); }
+      /* T55 启灵「获得保留」：ENLIGHTEN_CARD_MODS.retain 按卡主动态生效（enlightenOn 门控） */
+      const owner = b.allies.find(a => a.def.id === def.owner);
+      const enRetain = owner && typeof State.enlightenMods === "function"
+        ? State.enlightenMods(owner, def.name).some(e => e.retain) : false;
+      if (def.retain || inst.retainInst || enRetain) { keep.push(inst); Log.add(`${def.name}（保留${enRetain && !(def.retain || inst.retainInst) ? "·启灵" : ""}）留在了手中`, "sys"); }
       else this._discardOne(inst.uid);
     }
     b.piles.hand = keep;

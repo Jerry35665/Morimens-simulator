@@ -291,6 +291,7 @@ function runAllTests() {
 
   console.log("== 6.5 动态卡面 ==");
   {
+    rotan.enlightenOn = [false, false, false];   // T55：萝坦启灵1「打击」基础伤害+30% 默认开会抬高本锚点，场景内关闭
     const strikeDef = State.getCard("card_rotan_strike");
     const raw = Cards.describeEffects(strikeDef, rotan, "raw").join("；");
     check("动态卡面raw: 只按属性 → 造成4点伤害", raw.includes("造成4点伤害"), raw);
@@ -1870,7 +1871,8 @@ function runAllTests() {
     const hp28 = b28.team.hp;
     Cards.play(ex28.uid, null);
     const con28 = d28.stats.constitutionCombat;
-    const exp28 = Math.ceil(Math.ceil(con28 * 0.25) * (1 + d28.stats.gukuRecharge * 0.005)) + Math.ceil(con28 * 0.05 * 4);
+    const enHeal28 = (d28.enlightenOn && d28.enlightenOn[1] !== false) ? 1.2 : 1;   // T55 朵尔启灵2：等价交换回复效果+20%（默认开）
+    const exp28 = Math.ceil(Math.ceil(Math.ceil(con28 * 0.25) * (1 + d28.stats.gukuRecharge * 0.005)) * enHeal28) + Math.ceil(con28 * 0.05 * 4);
     check("T39朵尔 等价交换：主治疗(含灵知解构)+弃4张额外回复", b28.team.hp - hp28 === exp28 && b28.piles.hand.length === 0,
       `实际:${b28.team.hp - hp28} 预期:${exp28}（体质${con28} 弃4张 手牌余${b28.piles.hand.length}）`);
   }
@@ -2866,6 +2868,100 @@ function runAllTests() {
     check("T54 打出复仇宣言 → 希洛狂气+25", hero.guku === guku0 + 25, `guku:${hero.guku} (前${guku0})`);
     check("T54 打出后正常进弃牌堆（retain=回合末弃牌阶段保留，8.34 已验置入保留）", b.piles.discard.some(i => i.defId === "char_b05_awaken"),
       `弃:${b.piles.discard.length}`);
+    State.reset();
+  }
+
+  console.log("== 8.41 T55 启灵①②③框架+常用队子集（ENLIGHTEN_CARD_MODS/TURN_END）==");
+  {
+    const cast = (cardDef, src) => {
+      const inst = Cards.inst(cardDef.id, false);
+      State.battle.piles.hand = [inst];
+      State.battle.piles.draw = []; State.battle.piles.discard = [];
+      State.battle.energy = 9;
+      Cards.play(inst.uid);
+      return inst;
+    };
+
+    /* 凯刻斯：启灵1 破碎沉戟狂气+20（开-关对照）/ 启灵2 逆鳞之护护盾×1.2+保留 */
+    State.reset(); State.newBattle();
+    State.addAlly("char_o04", 1); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    let b = State.battle;
+    const ke2 = b.allies[0];
+    ke2.guku = 0; ke2.enlightenOn = [false, true, true];
+    cast(State.getCard("char_o04_s2"));
+    const gukuOff = ke2.guku;
+    ke2.guku = 0; ke2.enlightenOn = [true, true, true];
+    cast(State.getCard("char_o04_s2"));
+    check("T55 凯刻斯启灵1：破碎沉戟开-关狂气差=20", ke2.guku - gukuOff === 20, `开:${ke2.guku} 关:${gukuOff}`);
+    /* 启灵2 护盾×1.2（逆鳞之护=防×X%） */
+    const ke3 = b.allies[0];
+    ke3.enlightenOn = [true, false, true];
+    ke3.shield = 0;
+    cast(State.getCard("char_o04_s1"));
+    const shOff = ke3.shield;
+    ke3.shield = 0; ke3.enlightenOn = [true, true, true];
+    cast(State.getCard("char_o04_s1"));
+    check("T55 凯刻斯启灵2：逆鳞之护护盾×1.2", ke3.shield === Math.round(shOff * 1.2), `关:${shOff} 开:${ke3.shield}`);
+    /* 启灵2 保留：回合末逆鳞之护留手 */
+    b.piles.hand = [Cards.inst("char_o04_s1", false)];
+    Turn.endTurn();
+    check("T55 凯刻斯启灵2：回合末逆鳞之护因保留留手", b.piles.hand.some(i => i.defId === "char_o04_s1"), "手:" + b.piles.hand.map(i => i.defId).join(","));
+    State.reset();
+
+    /* 凯蒂古拉 启灵1：基础打击 dmgPct 50（basePlain 100→150） */
+    State.newBattle();
+    State.addAlly("char_c16", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    const strikeAny = DBF.cards.find(c => c.name === "基础打击" && c.owner === "char_helot_catena");   // 凯蒂古拉自身无基础打击定义（T32 部分录入），借同名卡验证 dmgPct 管线
+    b.allies[0].enlightenOn = [false, true, true];
+    const kaOff = Damage.compute({ source: b.allies[0], target: b.enemies[0], card: strikeAny, eff: { value: 100 }, crit: false }).final;
+    b.allies[0].enlightenOn = [true, true, true];
+    const kaOn = Damage.compute({ source: b.allies[0], target: b.enemies[0], card: strikeAny, eff: { value: 100 }, crit: false }).final;
+    check("T55 凯蒂古拉启灵1：基础打击基础伤害+50%", kaOn === Math.ceil(kaOff * 1.5), `关:${kaOff} 开:${kaOn}`);
+    State.reset();
+
+    /* 血链·希洛 启灵1：打出基础打击 → 临时暴击率+暴伤+15 */
+    State.newBattle();
+    const he = State.addAlly("char_helot_catena", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    const strikeDef = DBF.cards.find(c => c.name === "基础打击" && c.owner === "char_helot_catena");
+    const inst = Cards.inst(strikeDef.id, false);
+    b.piles.hand = [inst]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+    Cards.play(inst.uid);
+    const critAdd = Buffs.collect(b.allies[0], "critRateFlat").reduce((s, m) => s + (m.name === "临时暴击率" ? m.total : 0), 0);
+    check("T55 血链·希洛启灵1：打出基础打击临时暴击率+15", critAdd >= 15, "crit:" + critAdd);
+    State.reset();
+
+    /* 「24」启灵3：回合结束狂气+10 / 凯刻斯启灵3：回合结束体质7.5%回血（直调 enlightenTurnEnd 避开敌方行动） */
+    State.newBattle();
+    State.addAlly("char_c06", 1);
+    State.addAlly("char_o04", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    const c24 = b.allies[0], ke4 = b.allies[1];
+    c24.enlightenOn = [true, true, true]; ke4.enlightenOn = [true, true, true];
+    c24.guku = 0;
+    b.team.hp -= 100;
+    const hpBefore = b.team.hp;
+    State.enlightenTurnEnd(b);
+    check("T55 「24」启灵3：回合结束狂气+10", c24.guku === 10, "guku:" + c24.guku);
+    check("T55 凯刻斯启灵3：回合结束回复体质7.5%", b.team.hp - hpBefore === Math.ceil((ke4.stats.constitutionCombat || ke4.stats.constitution) * 7.5 / 100),
+      `回:${b.team.hp - hpBefore}`);
+    /* 开关门控：关闭后不触发 */
+    State.newBattle();
+    State.addAlly("char_c06", 1); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    b.allies[0].enlightenOn = [true, true, false];
+    b.allies[0].guku = 0;
+    State.enlightenTurnEnd(b);
+    check("T55 开关门控：「24」启灵3关闭→回合结束不加狂气", b.allies[0].guku === 0, "guku:" + b.allies[0].guku);
     State.reset();
   }
 

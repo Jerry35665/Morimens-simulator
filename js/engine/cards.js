@@ -233,6 +233,28 @@ const Cards = {
     }
     /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
     if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
+    /* T55 启灵打出触发：onPlayCrit/CritDmg（临时暴击率/暴伤%）、onPlayStrPct（攻X%临时力量）、
+     * onPlayTentaclePct（攻X%临时触腕伤害）——enlightenOn 门控 */
+    if (typeof State.enlightenMods === "function") {
+      for (const em of State.enlightenMods(owner, card.name)) {
+        if (em.onPlayCrit || em.onPlayCritDmg) {
+          if (em.onPlayCrit) Buffs.add(owner, "buff_crit_up", em.onPlayCrit, null, `启灵·${owner.def.name}`);
+          if (em.onPlayCritDmg) Buffs.add(owner, "buff_critdmg_up", em.onPlayCritDmg, null, `启灵·${owner.def.name}`);
+          Log.add(`🌟 启灵【${owner.def.name}】：打出「${card.name}」获得临时暴击率+${em.onPlayCrit || 0}%、暴伤+${em.onPlayCritDmg || 0}%`, "sys");
+        }
+        if (em.onPlayStrPct) {
+          const sv = Math.ceil((owner.attack || 0) * em.onPlayStrPct / 100);
+          if (sv > 0) { Buffs.add(owner, "buff_strength", 1, 1, `启灵·${owner.def.name}`, sv); Log.add(`🌟 启灵【${owner.def.name}】：打出「${card.name}」获得临时力量 +${sv}（攻${em.onPlayStrPct}%）`, "sys"); }
+        }
+        if (em.onPlayTentaclePct && typeof Tentacle !== "undefined") {
+          Tentacle.addTempDmg(owner, em.onPlayTentaclePct / 100);
+        }
+        if (em.onPlayGuku) {
+          owner.guku = Math.min(owner.gukuMax || 100, owner.guku + em.onPlayGuku);
+          Log.add(`🌟 启灵【${owner.def.name}】：打出「${card.name}」狂气 +${em.onPlayGuku}（${owner.guku}/${owner.gukuMax}）`, "sys");
+        }
+      }
+    }
     /* 刻印触发（T50 关卡刻印 Sigils）：附加在实例上的词缀，打出时结算 onPlay 子集。
      * ⚠与 T38「卡牌刻印（回响语境，未建模无数值影响）」同名不同物 */
     if (typeof Sigils !== "undefined" && inst.sigil) Sigils.onCardPlayed(inst, owner);
@@ -455,6 +477,13 @@ const Cards = {
         const times = eff.timesXSpend ? (State.battle.xSpend || 0) + 1 : (eff.times || 1);
         let v = eff.value != null ? eff.value + (eff.perLv || 0) * ((source.cardLv || 1) - 1)
           : Math.ceil(Math.round((source.defense || 0) * ((eff.scaleDefense || 0) + (eff.scalePerLv || 0) * ((source.cardLv || 1) - 1)) * 1e6) / 1e6);
+        /* T55 启灵卡牌修正：该卡护盾提高X%/+N 点 */
+        if (typeof State.enlightenMods === "function") {
+          for (const em of State.enlightenMods(source, card.name)) {
+            if (em.blockPct) v = Math.round(v * (1 + em.blockPct / 100));
+            if (em.blockFlat) v += em.blockFlat;
+          }
+        }
         const frag = Buffs.collect(source, "shieldPct");
         if (frag.length) {
           const agg = Buffs.aggregate(frag);
@@ -539,6 +568,13 @@ const Cards = {
         if (typeof State.talentGukuBonus === "function") {
           gv += State.talentGukuBonus(source, card);
         }
+        /* T55 启灵卡牌修正：该卡狂气 +N 点 / 提高 X% */
+        if (typeof State.enlightenMods === "function") {
+          for (const em of State.enlightenMods(source, card.name)) {
+            if (em.guku) gv += em.guku;
+            if (em.gukuPct) gv = Math.round(gv * (1 + em.gukuPct / 100));
+          }
+        }
         source.guku = Math.min(source.gukuMax || 100, source.guku + gv + lvBonus + lvGrow);
         break;
       }
@@ -608,6 +644,12 @@ const Cards = {
           const before = v;
           v = Math.ceil(v * (1 + (source.stats?.gukuRecharge || 0) * tk.healUpPerGuku));
           if (v !== before) Log.add(`✦ 天赋「灵知解构」：狂气回充 ${source.stats?.gukuRecharge || 0} → 回复 ${before}→${v}`, "good");
+        }
+        /* T55 启灵卡牌修正：该卡回复效果提高X% */
+        if (typeof State.enlightenMods === "function") {
+          for (const em of State.enlightenMods(source, card.name)) {
+            if (em.healPct) v = Math.ceil(v * (1 + em.healPct / 100));
+          }
         }
         if (t && v > 0) Damage.heal(t, v, card.name);
         break;
