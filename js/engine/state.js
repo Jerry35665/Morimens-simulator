@@ -938,7 +938,10 @@ const State = {
     if (em) {
       const idx = { normal: 0, hard: 1, nightmare: 2, insane: 3 }[diff] ?? 0;
       const stacks = parseInt([em[1], em[2], em[3], em[4]][idx], 10) || 0;
-      if (stacks > 0 && typeof Buffs !== "undefined") Buffs.add(u, "buff_ember", stacks, null, "开局自带");
+      if (stacks > 0 && typeof Buffs !== "undefined") {
+        Buffs.add(u, "buff_ember", stacks, null, "开局自带");
+        u.emberBase = stacks;   // 「层数每回合重置」基准（词条 2026-09-23；Turn.startTurn 恢复；外部来源[钥令]不设此标记）
+      }
     }
     const diffName = { normal: "普通n1", hard: "困难n2", nightmare: "噩梦n3", insane: "癫狂n4", n5: "n5", n6: "n6", n7: "n7" }[diff] || diff;
     Log.add(`添加怪物：${def.name}（${diffName} 第${b.wave}波，HP ${hp} / 攻击 ${atk}）`, "sys");

@@ -345,6 +345,7 @@ function runAllTests() {
   Turn.endTurn();
   check("回合+1且算力重置", State.battle.turn === 2 && State.battle.energy === 5);
   State.battle.team.hp = 1;
+  DBF.relicDeck = [];   // 清造物死抗（怪蛇残蜕+8%：T48 死亡抵抗 roll 命中会免死，本断言概率性失败）
   Damage.applyRawDamage(ogilvy, 10, "测试致命");
   Turn.checkEnd();
   check("队伍血尽→失败", State.battle.phase === "over" && State.battle.result === "lose");
@@ -2352,6 +2353,50 @@ function runAllTests() {
     })());
     check("T50: 刻印数据模型（35 条中 21 条已建模 onPlay）", DBF.sigils.filter(s => Object.keys(s.mods || {}).length > 0).length === 21);
     State.levelRelicDeck = [];
+  }
+
+  console.log("== 8.365 旧日余烬「每回合重置」（2026-10-06 实装）==");
+  {
+    DBF.relicDeck = [];
+    State.reset();
+    State.newBattle();
+    const er = State.addAlly("char_rotan", 1);
+    const em = State.addEnemy("enemy_molted_a");   // 蜕化者A：n1 自带 73 层余烬
+    State.addEnemy("enemy_dummy");                 // 无余烬对照怪
+    Turn.startBattle();
+    const eb = State.battle;
+    eb.team.maxHp = eb.team.hp = 99999;   // Lv1 队伍 92 血会被蜕化者反击团灭（phase=over 连锁失败）
+    const emberOf = (u) => (u.buffs || []).find(x => x.defId === "buff_ember");
+    check("余烬: addEnemy 记录基准 emberBase=73", em.emberBase === 73 && emberOf(em).stacks === 73,
+      "base:" + em.emberBase + " 层:" + (emberOf(em) || {}).stacks);
+    /* 主动伤害引爆：移除等量层 + 失去 300% */
+    const emHp0 = em.hp;
+    Damage.deal({ source: er, target: em, card: null, eff: { value: 30 }, label: "t" });
+    check("余烬: 打30 → 移除30层(73→43)+失90血", emberOf(em).stacks === 43 && emHp0 - em.hp === 30 + 90,
+      "层:" + (emberOf(em) || {}).stacks + " 扣血:" + (emHp0 - em.hp));
+    /* 每回合重置：下一回合开始恢复基准 */
+    Turn.endTurn();
+    check("余烬: 下回合开始重置回 73", emberOf(em) && emberOf(em).stacks === 73,
+      "层:" + (emberOf(em) || {}).stacks);
+    /* 打光移除后重挂：恰好清空 73 层（失 219 引爆血）而不击杀（1525 血） */
+    Damage.deal({ source: er, target: em, card: null, eff: { value: 100 }, label: "清层" });
+    check("余烬: 打100清空73层实例被移除", !emberOf(em), "剩:" + (emberOf(em) || { stacks: "无" }).stacks);
+    Turn.endTurn();
+    check("余烬: 打光移除后下回合重挂 73", emberOf(em) && emberOf(em).stacks === 73,
+      "层:" + (emberOf(em) || {}).stacks);
+    /* 外部叠加部分随重置被冲回基准 */
+    Buffs.add(em, "buff_ember", 50, null, "钥令外部层");
+    check("余烬: 外部叠加合并(73+50=123)", emberOf(em).stacks === 123);
+    Turn.endTurn();
+    check("余烬: 重置冲回基准 73（外挂层不保留）", emberOf(em) && emberOf(em).stacks === 73,
+      "层:" + (emberOf(em) || {}).stacks);
+    /* 无 emberBase 的怪（钥令对普通怪挂余烬）不重置 */
+    const dm = eb.enemies.find(x => x.def && x.def.id === "enemy_dummy") || eb.enemies[1];   // 单位只有 def.id
+    Buffs.add(dm, "buff_ember", 100, null, "钥令挂普通怪");
+    Turn.endTurn();
+    check("余烬: 无基准怪不重置(100 保持)", emberOf(dm) && emberOf(dm).stacks === 100,
+      "层:" + (emberOf(dm) || {}).stacks);
+    State.reset();
   }
 
   console.log("== 8.36 共享力量槽分实例（缺陷修复，AI 会话 10-06 实测报告）==");

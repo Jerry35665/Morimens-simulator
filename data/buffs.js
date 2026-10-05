@@ -195,7 +195,7 @@ window.DBF.buffs = [
   { id: "buff_ember", name: "旧日余烬", kind: "debuff", stack: "add", maxStacks: null, defaultDuration: null,
     effect: {}, burnOnHit: true, confirmed: true,
     desc: "承受主动伤害后移除等量层数并失去300%移除量的生命，其他伤害移除一半；层数每回合重置（蜕化者系，词条 2026-09-23）",
-    icon: "🔥", onEnd: null, source: "游戏内词条（用户采集）", notes: "引擎已接 deal 引爆钩子（burnOnHit）；每回合重置到初始层未实现" },
+    icon: "🔥", onEnd: null, source: "游戏内词条（用户采集）", notes: "引擎已接 deal 引爆钩子（burnOnHit）；✅每回合重置已实装（2026-10-06：u.emberBase=开局层数，Turn.startTurn 恢复到基准/打光重挂；仅怪自带重置，钥令等外部来源不重置）" },
 
   /* ---------- 2026-09-28 钥令临时属性（回合末消失；目标范围按全员实现，待实测） ---------- */
   { id: "buff_crit_up", name: "临时暴击率", kind: "buff", stack: "add", maxStacks: null, defaultDuration: 1,

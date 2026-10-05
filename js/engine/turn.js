@@ -65,6 +65,21 @@ const Turn = {
     if (typeof Tentacle !== "undefined") Tentacle.onTurnStart();   // 触腕姿态每回合开始重置为潮涌
     if (typeof RealmSys !== "undefined") RealmSys.onTurnStart();   // 血肉融合/熔炉积攒 + 超维精通（T36 界域系统）
     if (window.Yogens) Yogens.tickDelayed();   // 延迟护盾等（下回合开始时结算）
+    /* 旧日余烬「层数每回合重置」（2026-10-06 实装）：怪自带的余烬（u.emberBase=开局层数，
+     * addEnemy 从 passives 提取）每回合开始恢复到基准——打光被移除的实例重新挂载；
+     * 外部来源（钥令·岁末花火等，无 emberBase 标记）挂的余烬不重置，叠加超出部分随重置被冲回基准 */
+    for (const e of b.enemies) {
+      if (e.emberBase == null || e.hp <= 0) continue;
+      const inst = (e.buffs || []).find(x => x.defId === "buff_ember");
+      if (inst) {
+        if (inst.stacks !== e.emberBase) {
+          Log.add(`🔥 ${e.def.name} 的旧日余烬重置回 ${e.emberBase} 层（每回合重置）`, "sys");
+          inst.stacks = e.emberBase;
+        }
+      } else {
+        Buffs.add(e, "buff_ember", e.emberBase, null, "每回合重置");
+      }
+    }
     Log.add(`—— 第 ${b.turn} 回合：我方行动（算力 ${b.energy}） ——`, "turn");
     /* 超维回合：超维空间所有卡置入手牌，代替抽牌（维度跃迁；至纯免疫 -25%） */
     if (typeof RealmSys !== "undefined" && RealmSys.hyperDrawReplacement()) {
