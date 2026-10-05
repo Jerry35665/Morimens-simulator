@@ -25,7 +25,20 @@ const Buffs = {
 
   _addOne(unit, def, stacks, duration, note, per) {
     const buffId = def.id;
-    let inst = unit.buffs.find(x => x.defId === buffId);
+    /* 共享槽分实例（缺陷修复，AI 会话 10-06 实测报告）：shared（力量/戒备）按 (per, 生效时长) 分实例——
+     * 永久力量（钥令·咆哮的血与沙 per=200）与临时力量（琥珀 onAnyPlay per=11 duration=1、螺湮重临等）
+     * 在真实游戏中是并存独立图标；旧单实例语义下临时力量会 ①覆盖整份 per ②把永久改写成 1 回合，
+     * 回合末 tick 连累积层一起清掉（AI 复现：力 800→96→0）。
+     * 同 (per, duration) 语义相同仍合并叠层；非 shared（中毒等 per 依来源改写）维持单实例覆盖口径 */
+    let inst;
+    if (def.shared) {
+      const dKey = duration != null ? duration : def.defaultDuration;
+      inst = unit.buffs.find(x => x.defId === buffId
+        && (x.per != null ? x.per : null) === (per != null ? per : null)
+        && (x.duration != null ? x.duration : def.defaultDuration) === dKey);
+    } else {
+      inst = unit.buffs.find(x => x.defId === buffId);
+    }
     if (!inst) {
       inst = {
         uid: State.nextUid("buff"), defId: buffId,
@@ -58,17 +71,18 @@ const Buffs = {
     return inst;
   },
 
-  /* 减少层数 / 移除（shared 类同步全队） */
+  /* 减少层数 / 移除。shared 实例挂队伍容器（2026-10-05 迁移）——ally 侧作用于 b.team.buffs
+   * （旧版在 allies 上查找=永远找不到的静默 no-op，顺手修复）；分槽后同名可能多实例，逐实例各减 */
   removeStacks(unit, buffId, stacks = Infinity) {
     const def = State.getBuff(buffId);
-    const units = def && def.shared
-      ? (unit.side === "ally" ? State.battle.allies : State.battle.enemies)
+    const containers = def && def.shared
+      ? (unit.side === "ally" ? [State.battle.team] : State.battle.enemies)
       : [unit];
-    for (const u of units) {
-      const inst = u.buffs.find(x => x.defId === buffId);
-      if (!inst) continue;
-      inst.stacks -= stacks;
-      if (inst.stacks <= 0) u.buffs = u.buffs.filter(x => x !== inst);
+    for (const u of containers) {
+      for (const inst of (u.buffs || []).filter(x => x.defId === buffId)) {
+        inst.stacks -= stacks;
+        if (inst.stacks <= 0) u.buffs = u.buffs.filter(x => x !== inst);
+      }
     }
     State.notify();
   },

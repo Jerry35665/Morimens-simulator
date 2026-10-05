@@ -29,6 +29,13 @@ function check(name, cond, extra = "") {
 window.alert = (m) => { throw new Error("alert: " + m); };
 
 /* 共享 buff（力量/戒备）2026-10-05 起挂队伍容器 b.team.buffs 一份（不每人重复）——测试读取/清理 helper */
+function __buffsAll(unit, defId) {
+  const own = (unit.buffs || []).filter(x => x.defId === defId);
+  const team = State.battle && State.battle.team;
+  const shared = (team && unit.side === "ally" && Array.isArray(team.buffs))
+    ? team.buffs.filter(x => x.defId === defId) : [];
+  return own.concat(shared);
+}
 function __buff(unit, defId) {
   const own = (unit.buffs || []).find(x => x.defId === defId);
   if (own) return own;
@@ -866,7 +873,10 @@ function runAllTests() {
     Wheels.onBurst(a12, 100);   // 直调爆发钩子（mock 无爆发卡定义，releaseBurst 走不通）
     check("T8三 职责所在 爆发全员+5狂气", w4.allies.every(x => x.guku >= 5));
     check("T8三 致挚友 爆发全体暴击率+25%", a12.buffs.some(x => x.defId === "buff_crit_up" && x.per === 25));
-    check("T8三 灼热的吻别 爆发力量+3(攻100×3%)", (() => { const bi = __buff(a12, "buff_strength"); return !!bi && bi.per === 3; })());
+    check("T8三 灼热的吻别 爆发力量+3(攻100×3%)", (() => {
+      const all = __buffsAll(a12, "buff_strength");
+      return all.some(x => x.per === 3);
+    })());
     /* 命轮加卡（真实角色卡数据）：坚韧意志 → 希洛牌库 打击/防御 各+1 */
     State.newBattle();
     const h12 = State.addAlly("char_helot_catena", 80);
@@ -2342,6 +2352,47 @@ function runAllTests() {
     })());
     check("T50: 刻印数据模型（35 条中 21 条已建模 onPlay）", DBF.sigils.filter(s => Object.keys(s.mods || {}).length > 0).length === 21);
     State.levelRelicDeck = [];
+  }
+
+  console.log("== 8.36 共享力量槽分实例（缺陷修复，AI 会话 10-06 实测报告）==");
+  {
+    State.reset();
+    State.newBattle();
+    const fr = State.addAlly("char_rotan", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const fb = State.battle;
+    /* AI 复现场景：钥令咆哮（永久 per=200）+ 琥珀类临时力量（per=11, 1回合） */
+    Buffs.add(fr, "buff_strength", 4, null, "咆哮", 200);
+    Buffs.add(fr, "buff_strength", 1, 1, "琥珀", 11);
+    const slots = __buffsAll(fr, "buff_strength");
+    check("分槽: 永久+临时并存两个实例", slots.length === 2,
+      "实例:" + JSON.stringify(slots.map(x => ({ per: x.per, d: x.duration, s: x.stacks }))));
+    check("分槽: 永久实例 per=200 不被覆盖", slots.some(x => x.per === 200 && x.duration == null && x.stacks === 4));
+    check("分槽: 临时实例 per=11 d1", slots.some(x => x.per === 11 && x.duration === 1 && x.stacks === 1));
+    check("分槽: collect 求和=4×200+1×11=811", (() => {
+      const total = Buffs.collect(fr, "damageFlat").reduce((s2, m) => s2 + m.total, 0);
+      return total === 811;
+    })(), "total:" + Buffs.collect(fr, "damageFlat").reduce((s2, m) => s2 + m.total, 0));
+    /* 回合末：临时清、永久保持 */
+    Buffs.tickTurnEnd(fb.team);
+    const afterTick = __buffsAll(fr, "buff_strength");
+    check("分槽: 回合末临时消失、永久原样", afterTick.length === 1 && afterTick[0].per === 200 && afterTick[0].stacks === 4,
+      "剩:" + JSON.stringify(afterTick.map(x => ({ per: x.per, s: x.stacks }))));
+    /* 同 (per,duration) 合并叠层 */
+    Buffs.add(fr, "buff_strength", 1, null, "咆哮再挂", 200);
+    const merged = __buffsAll(fr, "buff_strength");
+    check("分槽: 同 per 同时长合并叠层(4+1)", merged.length === 1 && merged[0].stacks === 5);
+    /* removeStacks 作用于 team 容器（顺手修复旧 no-op） */
+    Buffs.removeStacks(fr, "buff_strength", 1);
+    check("分槽: removeStacks 对共享容器生效(5-1)", __buffsAll(fr, "buff_strength")[0].stacks === 4);
+    /* 多实例 removeStacks 逐实例减 */
+    Buffs.add(fr, "buff_strength", 1, 1, "临时2", 11);
+    Buffs.removeStacks(fr, "buff_strength", 1);
+    const after2 = __buffsAll(fr, "buff_strength");
+    check("分槽: 多实例各减1层（临时1层被移除、永久4→3）", after2.length === 1 && after2[0].per === 200 && after2[0].stacks === 3,
+      "剩:" + JSON.stringify(after2.map(x => ({ per: x.per, s: x.stacks }))));
+    State.reset();
   }
 
   renderSummary();
