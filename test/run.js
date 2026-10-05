@@ -3055,6 +3055,82 @@ function runAllTests() {
     State.reset();
   }
 
+  console.log("== 8.43 T57 超限爆发逐角色（立即生效子集 11 人）==");
+  {
+    /* 构造超限态：gukuMax=200 + guku=200 */
+    const setupOD = (charId, extra) => {
+      State.reset(); State.newBattle();
+      const a = State.addAlly(charId, 1);
+      a.gukuMax = 200; a.guku = 200;
+      State.addEnemy("enemy_dummy");
+      State.addEnemy("enemy_dummy");
+      if (extra) State.addEnemy(extra);
+      Turn.startBattle();
+      State.battle.phase = "play";
+      return { a, b: State.battle };
+    };
+    /* 拉蒙娜：易伤+虚弱全体 */
+    {
+      const { a, b } = setupOD("char_ramona");
+      Cards.releaseBurst(a);
+      const vul = b.enemies.map(e => __buffsAll(e, "debuff_vul").reduce((s2, m) => s2 + m.stacks, 0));
+      check("T57 拉蒙娜超限：全体易伤+虚弱1回合", vul.every(v => v >= 1) && b.enemies.every(e => __buffsAll(e, "debuff_weak").length >= 1), `易伤:${vul.join("/")}`);
+    }
+    /* 雷娅：全体暴击率/暴伤+10 */
+    {
+      const { a, b } = setupOD("char_b08");
+      Cards.releaseBurst(a);
+      const cr = Buffs.collect(b.allies[0], "critRateFlat").reduce((s2, m) => s2 + (m.name === "临时暴击率" ? m.total : 0), 0);
+      check("T57 雷娅超限：全体暴击率/暴伤+10", cr >= 10, "crit:" + cr);
+    }
+    /* 图鲁：号令触腕×1.5（深海单人触腕2条） */
+    {
+      const { a, b } = setupOD("char_tulu");
+      const hp0 = b.enemies[0].hp;
+      Cards.releaseBurst(a);
+      check("T57 图鲁超限：号令触腕攻击（敌掉血>0）", b.enemies[0].hp < hp0, `掉:${hp0 - b.enemies[0].hp}`);
+    }
+    /* 菲茵特：敌失去75%防御力的临时力量 */
+    {
+      const { a, b } = setupOD("char_b09");
+      const target = b.enemies[0];
+      target.defense = 200;   // 怪库无防御字段（仅 hp/attack/lv）——手动设验证公式
+      const d0 = 200;
+      Cards.releaseBurst(a);
+      const sd = target.buffs.find(x => x.defId === "debuff_strength_down");
+      check("T57 菲茵特超限：敌力量降低=75%防御", sd && sd.per === -Math.ceil(d0 * 0.75), `per:${sd && sd.per}（防${d0}）`);
+    }
+    /* 詹金：置超级大集结 */
+    {
+      const { a, b } = setupOD("char_jenkin");
+      b.piles.hand = [];
+      Cards.releaseBurst(a);
+      check("T57 詹金超限「偷袭！」：超级大集结置手", b.piles.hand.some(i => i.defId === "card_jenkin_mega_rally"), "手:" + b.piles.hand.map(i => i.defId).join(","));
+    }
+    /* 汀克特：随机5张手牌费0 */
+    {
+      const { a, b } = setupOD("char_d03");
+      b.piles.hand = [Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false)];
+      Cards.releaseBurst(a);
+      const zeroed = b.piles.hand.filter(i => (i.disc || 0) >= (State.getCard(i.defId).cost || 0)).length;
+      check("T57 汀克特超限：随机5张手牌费0（手牌3张全清）", zeroed === 3, `清:${zeroed}/3`);
+    }
+    /* 普通爆发不触发（对照组）：guku=150 释放→钩子不走 */
+    {
+      State.reset(); State.newBattle();
+      const a = State.addAlly("char_ramona", 1);
+      a.guku = 150;
+      State.addEnemy("enemy_dummy"); State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      State.battle.phase = "play";
+      const b = State.battle;
+      Cards.releaseBurst(a);
+      const vul = b.enemies.map(e => __buffsAll(e, "debuff_vul").reduce((s2, m) => s2 + m.stacks, 0)).reduce((x, y) => x + y, 0);
+      check("T57 对照：普通爆发（<200）不触发超限效果", vul === 0, `易伤层:${vul}`);
+    }
+    State.reset();
+  }
+
   renderSummary();
 }
 

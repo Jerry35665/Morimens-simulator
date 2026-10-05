@@ -200,6 +200,64 @@ const State = {
     char_o04: { lv: 3, healPctCon: 7.5 },
   },
 
+  /* ---- T57 超限爆发逐角色（docs/OVERDRIVE.md 38 条表；gukuMax=200 攒满释放触发）----
+   * 仅录「立即生效可独立结算」子集；「持续 N 回合」/置卡缺失/大机制类维持 docs/OVERDRIVE.md 原文备查。
+   * 消费点：cards.releaseBurst 的 isOverdrive 分支（普通爆发不触发） */
+  OVERDRIVE_HOOKS: {
+    char_ramona: { text: "对所有敌人造成易伤与虚弱 1 回合，下 1 张指令卡生效 3 次", run(ally, b) {
+      for (const e of b.enemies) if (e.hp > 0) { Buffs.add(e, "debuff_vul", 1, null, "超限·拉蒙娜"); Buffs.add(e, "debuff_weak", 1, null, "超限·拉蒙娜"); }
+      Log.add(`⚡ 超限【拉蒙娜】：所有敌人易伤+虚弱 1 回合（「下1张指令卡生效3次」段未建模）`, "good");
+    } },
+    char_b08: { text: "获得的力量提高200%（未建模），所有唤醒体暴击率与暴击伤害+10%", run(ally, b) {
+      for (const a of b.allies) { Buffs.add(a, "buff_crit_up", 1, null, "超限·雷娅", 10); Buffs.add(a, "buff_critdmg_up", 1, null, "超限·雷娅", 10); }
+      Log.add(`⚡ 超限【雷娅】：所有唤醒体暴击率/暴伤 +10%（力量获取+200% 段未建模）`, "good");
+    } },
+    char_b03: { text: "获得强化 3 回合（造成的伤害提高25%）", run(ally, b) {
+      Buffs.add(ally, "buff_empower", 1, 3, "超限·艾继丝");
+      Log.add(`⚡ 超限【艾继丝】：获得强化 3 回合（伤害+25%，叠法 unknown 标记随 def）`, "good");
+    } },
+    char_agrippa: { text: "虚弱并易伤所有敌人 3 回合，本回合指令卡算力-1（后者未建模）", run(ally, b) {
+      for (const e of b.enemies) if (e.hp > 0) { Buffs.add(e, "debuff_weak", 3, null, "超限·阿格里帕"); Buffs.add(e, "debuff_vul", 3, null, "超限·阿格里帕"); }
+      Log.add(`⚡ 超限【阿格里帕】：所有敌人虚弱+易伤 3 回合（算力-1 段未建模）`, "good");
+    } },
+    char_b09: { text: "所有敌人失去 75% 防御力的临时力量", run(ally, b) {
+      for (const e of b.enemies) {
+        if (e.hp <= 0) continue;
+        const sv = Math.ceil((e.defense || 0) * 0.75);
+        if (sv > 0) Buffs.add(e, "debuff_strength_down", 1, null, "超限·菲茵特", -sv);
+      }
+      Log.add(`⚡ 超限【菲茵特】：所有敌人失去 75% 防御力的临时力量`, "good");
+    } },
+    char_tulu: { text: "号令所有触腕攻击 1 次，本次号令 1.5 倍伤害", run(ally, b) {
+      if (typeof Tentacle !== "undefined" && b.tentacle && b.tentacle.count > 0) {
+        const tgt = () => b.enemies.find(e => e.hp > 0);
+        for (let i = 0; i < b.tentacle.count; i++) { const t = tgt(); if (!t) break; Tentacle.strike(t, 1.5, "超限号令", null); }
+        Log.add(`⚡ 超限【图鲁】：号令 ${b.tentacle.count} 条触腕攻击（×1.5）`, "good");
+      }
+    } },
+    char_o02: { text: "触腕伤害+20%攻（本回合），下次钥令生效2次（后者未建模）", run(ally, b) {
+      if (typeof Tentacle !== "undefined") Tentacle.addTempDmg(ally, 0.2);
+      Log.add(`⚡ 超限【墨菲】：触腕伤害 +20% 攻（本回合；钥令双发段未建模）`, "good");
+    } },
+    char_o06: { text: "巨刃之威费-1（卡未入库），暴击伤害+50%", run(ally, b) {
+      Buffs.add(ally, "buff_critdmg_up", 1, null, "超限·戈利亚", 50);
+      Log.add(`⚡ 超限【戈利亚】：暴击伤害 +50%（巨刃之威段未建模）`, "good");
+    } },
+    char_b05: { text: "临时手牌上限+2、置2张不规则形态（卡未入库），暴击伤害+50%", run(ally, b) {
+      Buffs.add(ally, "buff_critdmg_up", 1, null, "超限·希洛", 50);
+      Log.add(`⚡ 超限【希洛】：暴击伤害 +50%（手牌上限/置卡段未建模）`, "good");
+    } },
+    char_jenkin: { text: "「偷袭！」：置1张「超级大集结！」入手（洗入鼠群冲击+保留段未建模）", run(ally, b) {
+      const def = DBF.cards.find(c => c.id === "card_jenkin_mega_rally");
+      if (def && b.piles.hand.length < Cards.HAND_LIMIT) { b.piles.hand.push(Cards.inst(def.id, false)); Log.add(`⚡ 超限【詹金】「偷袭！」：「超级大集结！」置入手牌（鼠群冲击洗入段未建模）`, "good"); }
+    } },
+    char_d03: { text: "随机 5 张手牌直到回合结束算力消耗变为 0", run(ally, b) {
+      const pool = [...b.piles.hand].sort(() => Math.random() - 0.5).slice(0, 5);
+      for (const inst of pool) { const def = Cards.def(inst); inst.disc = (inst.disc || 0) + (def.cost || 0); }
+      Log.add(`⚡ 超限【汀克特】：${pool.length} 张随机手牌本回合算力消耗变为 0`, "good");
+    } },
+  },
+
   /* helper：收集某单位某卡当前生效的启灵修正条目 */
   enlightenMods(unit, cardName) {
     if (!unit || !unit.def || !cardName) return [];

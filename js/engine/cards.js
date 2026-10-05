@@ -713,6 +713,10 @@ const Cards = {
       }
     }
     Log.add(`${ally.def.name} 狂气剩余 ${ally.guku}${isOverdrive ? "（超限减半）" : ""}`, "sys");
+    /* T57 超限爆发逐角色（docs/OVERDRIVE.md）：gukuMax=200 攒满释放触发专属效果——立即生效子集 */
+    if (isOverdrive && State.OVERDRIVE_HOOKS && State.OVERDRIVE_HOOKS[ally.def.id] && typeof State.OVERDRIVE_HOOKS[ally.def.id].run === "function") {
+      try { State.OVERDRIVE_HOOKS[ally.def.id].run(ally, b); } catch (e) { Log.add(`⚠ 超限效果异常: ${e.message}`, "sys"); }
+    }
     /* 星辰篇·狂气调和（T48）：每次释放狂气爆发后基础狂气 +10；记录本回合已爆发（回合末未爆发者转银钥）。
      * 「狂气百分比提高效果减半」未建模——引擎现无「狂气获取提高X%」类词条，登记 DATA-TODO */
     if (State.starEnv) {
