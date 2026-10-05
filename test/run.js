@@ -2833,6 +2833,42 @@ function runAllTests() {
     State.reset();
   }
 
+  console.log("== 8.40 T54 灵知觉醒卡 61 张建模收尾（占位第一子句+retain 一致性）==");
+  {
+    const aw = DBF.cards.filter(c => c.type === "灵知觉醒");
+    check("T54 灵知觉醒卡 61 张 effects 全非空", aw.length === 61 && aw.every(c => Array.isArray(c.effects) && c.effects.length > 0),
+      "总:" + aw.length + " 空:" + aw.filter(c => !c.effects || !c.effects.length).length);
+    check("T54 retain 一致性：text「保留。」结尾者全带 retain", aw.filter(c => /保留。$/.test((c.text || "").trim()) && !c.retain).length === 0);
+    check("T54 维修大师 text 修错（原「25诺缔拉…A灵知觉醒」转录错）", (() => {
+      const c = DBF.cards.find(x => x.id === "char_c07_s1");
+      return c.text.startsWith("诺缔拉获得25点狂气。灵知觉醒：");
+    })());
+
+    /* E2E：银钥觉醒置入「复仇宣言」→ 打出 → 希洛 +25 狂气且卡因保留回手 */
+    State.reset();
+    State.newBattle();
+    State.addAlly("char_b05", 1);   // 希洛
+    State.addEnemy("enemy_dummy");
+    State.setCarriedYogen("yg_inject_guard");
+    Turn.startBattle();
+    const b = State.battle;
+    const hero = b.allies[0];
+    b.silver = 1000; b.phase = "play";
+    const handN = b.piles.hand.length;
+    check("T54 银钥觉醒置入复仇宣言", Yogens.awaken("char_b05_awaken") === true && b.piles.hand.some(i => i.defId === "char_b05_awaken"));
+    const inst = b.piles.hand.find(i => i.defId === "char_b05_awaken");
+    const guku0 = hero.guku;
+    b.energy = 9;
+    b.piles.hand = b.piles.hand.filter(i => i !== inst);   // 模拟其余手牌不受干扰
+    b.piles.hand.push(inst);
+    b.piles.draw = []; b.piles.discard = [];
+    Cards.play(inst.uid);
+    check("T54 打出复仇宣言 → 希洛狂气+25", hero.guku === guku0 + 25, `guku:${hero.guku} (前${guku0})`);
+    check("T54 打出后正常进弃牌堆（retain=回合末弃牌阶段保留，8.34 已验置入保留）", b.piles.discard.some(i => i.defId === "char_b05_awaken"),
+      `弃:${b.piles.discard.length}`);
+    State.reset();
+  }
+
   renderSummary();
 }
 
