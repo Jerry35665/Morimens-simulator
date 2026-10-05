@@ -201,7 +201,7 @@ const PipPanel = {
     const b = State.battle;
     if (!b) return "【局面】准备阶段（未开战）";
     const L = [];
-    L.push(`【局面】第${b.turn}回合 | 算力${b.energy} | 银钥${b.silver}/1000${b.silver >= 1000 ? "（钥令可用）" : ""} | 队伍生命${b.team.hp}/${b.team.maxHp}${(b.usedYogens || []).length ? ` | 本探索已用尘封旧忆×${b.usedYogens.length}` : ""}`);
+    L.push(`【局面】第${b.turn}回合 | 算力${b.energy} | 银钥${b.silver}/1000${b.silver >= 1000 ? "（钥令可用）" : ""} | 队伍生命${b.team.hp}/${b.team.maxHp}${(b.usedYogens || []).length ? ` | 本探索已用尘封旧忆×${b.usedYogens.length}` : ""}${State.starEnv ? " | ⭐星辰篇" : ""}`);
     if (b.tentacle) L.push(`🐙触腕×${b.tentacle.count}${b.tentacle.rally ? `+集结${b.tentacle.rally}` : ""}·${b.tentacle.stance}`);
     /* 敌人下回合意图（与 board.js 同口径：aiIndex % 长度；value 支持难度对象；
      * T28：意图显示值含当前力量=基础值+Σ力量点数，快照给有效值并注明基础拆分） */
@@ -223,7 +223,10 @@ const PipPanel = {
     };
     for (const a of b.allies) {
       const bl = a.buffs.map(x => `${State.getBuff(x.defId)?.name || x.defId}×${x.stacks}`).join("，");
-      L.push(`- ${a.def.name}#${a.uid} Lv${a.level}：狂气${a.guku}/${a.gukuMax}${a.guku >= 100 ? "（可爆发）" : ""}${bl ? `，状态：${bl}` : ""}`);
+      /* T51：力量按有效合计给出（Buffs.collect 含队伍级共享 buff、per×stacks 口径）——
+       * 共享力量挂 b.team.buffs 后逐人 buffs 列表看不见，且「力量×N」的 N 是层数非点数 */
+      const strTotal = Buffs.collect(a, "damageFlat").reduce((s, m) => s + m.total, 0);
+      L.push(`- ${a.def.name}#${a.uid} Lv${a.level}：狂气${a.guku}/${a.gukuMax}${a.guku >= 100 ? "（可爆发）" : ""}${strTotal !== 0 ? `，力量合计${strTotal > 0 ? "+" : ""}${strTotal}` : ""}${bl ? `，状态：${bl}` : ""}`);
     }
     const hand = b.piles.hand.map(inst => {
       const def = Cards.def(inst);

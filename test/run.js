@@ -686,6 +686,19 @@ function runAllTests() {
     check("T49 名册含练度引用源（星级/深化字段在案，供铁律2对账）",
       sys.includes("⭐") && sys.includes("深化"),
       "");
+    /* T51 出牌认知：KNOWN 力量数学+爆发认知条目 */
+    const k51 = ["力量数学", "不吃任何强效", "多段卡", "力量获取效果提高", "狂气爆发认知", "不耗算力", "狂气调和"];
+    check("T51 KNOWN 力量数学+爆发认知条目", k51.every(k => sys.includes(k)),
+      "缺失:" + (k51.filter(k => !sys.includes(k)).join("/") || "无"));
+    /* T51 快照：力量按有效合计给出（共享力量挂队伍容器、per=200 非「×1」） */
+    State.newBattle();
+    const a51 = State.addAlly("char_helot_catena", 80);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    Buffs.add(a51, "buff_strength", 1, null, "T51测试", 200);
+    const snap51 = PipPanel.snapshotText().split("\n").find(l => l.includes("血链·希洛#")) || "";
+    check("T51 快照力量合计=有效点数（per=200 显示 +200 而非 ×1）", snap51.includes("力量合计+200"),
+      snap51.slice(0, 110));
   }
 
   /* ---- T8 二期：乘区补轮（琥珀/核心熔解/不可承受）+ 触发暴击 + 减费 + 治疗增益 ---- */
