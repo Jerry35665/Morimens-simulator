@@ -26,7 +26,7 @@ const Turn = {
     /* 命轮开战效果（T8）：冬夜追忆易伤/神王的颂歌狂气 */
     if (typeof Wheels !== "undefined") Wheels.onBattleStart();
     /* 关卡造物开战效果（T50）：红宝石胸针力量/日月轮盘界域/海眷歌谣触腕等 */
-    if (typeof LevelRelics !== "undefined") LevelRelics.onBattleStart();
+    if (typeof LevelRelics !== "undefined") { LevelRelics.onBattleStart(); LevelRelics.applyEnvOnBattle(); }   // applyEnv=时空扭曲环境（T53）
     /* 界域系统（血肉熔炉继承/超维空间重置） */
     if (typeof RealmSys !== "undefined") RealmSys.onBattleStart();
     /* 灵塑专属开战效果（T41）：艾瑞卡力量/戒备、环行·拉蒙娜银钥能量 */
@@ -85,7 +85,9 @@ const Turn = {
     if (typeof RealmSys !== "undefined" && RealmSys.hyperDrawReplacement()) {
       Log.add(`🌀（超维回合效果已替代本回合抽牌）`);
     } else {
-      Cards.draw(this.DRAW_COUNT);
+      /* 关卡造物抽牌减量（T53 哀嚎摇铃：回合开始少抽 1） */
+      const pen = (typeof LevelRelics !== "undefined") ? LevelRelics.startDrawPenalty() : 0;
+      Cards.draw(Math.max(0, this.DRAW_COUNT - pen));
     }
     /* 关卡造物回合开始效果（T50）：定向罗盘抽牌/日月轮盘奇偶/守护之手低血盾（快照前，随回溯一致） */
     if (typeof LevelRelics !== "undefined") LevelRelics.onTurnStart();
@@ -113,6 +115,7 @@ const Turn = {
         deathResistChance: (b.deathResistChance != null) ? b.deathResistChance : 1
       },
       team: b.team, teamStats: b.teamStats, aiIndex: b.aiIndex,
+      relicState: b.relicState ? JSON.parse(JSON.stringify(b.relicState)) : null,   // T53 造物冷却/每回合计数随快照回溯
       playedCount: b.playedCount || 0,   // T34 条件边：本战斗我方累计打牌数（「出牌>=N」条件用）
       firstCardPlayed: b.firstCardPlayed === true,
       fleshFusion: b.fleshFusion || 0,
@@ -157,6 +160,7 @@ const Turn = {
     b.team = JSON.parse(JSON.stringify(s.team));
     b.teamStats = JSON.parse(JSON.stringify(s.teamStats));
     b.aiIndex = JSON.parse(JSON.stringify(s.aiIndex));
+    b.relicState = s.relicState ? JSON.parse(JSON.stringify(s.relicState)) : { cool: {}, cnt: {} };   // T53 造物运行时状态还原
     b.playedCount = s.playedCount || 0;   // T34：打牌计数随快照还原（预览/回溯不虚增）
     b.firstCardPlayed = s.firstCardPlayed === true;   // 首卡标记随快照还原（T8）
     b.fleshFusion = s.fleshFusion || 0;

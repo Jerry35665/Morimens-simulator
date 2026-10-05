@@ -23,7 +23,7 @@
  * ========================================================= */
 
 window.LevelRelics = {
-  UNMODELED_VERSION: "2026-10-05",
+  UNMODELED_VERSION: "2026-10-06",
 
   /* ---------- 携带管理（探索级） ---------- */
   deck() { return State.levelRelicDeck || (State.levelRelicDeck = []); },
@@ -53,6 +53,38 @@ window.LevelRelics = {
   },
   clear() { if (State.levelRelicDeck) State.levelRelicDeck = []; State.persist(); },
 
+  /* ---------- 造物运行时状态（冷却/每回合计数）——挂 b.relicState 随快照回溯（T53） ----------
+   * cool: {造物id: 剩余回合}——触发时置 N，onTurnStart 递减（3 回合冷却）
+   * cnt:  {键: 次数}——每回合开始清零；键形如 `exhaust_lr054` / `diffOwn_char_doll` */
+  _rs() { const b = State.battle; return b.relicState || (b.relicState = { cool: {}, cnt: {} }); },
+  _coolReady(id) { const c = this._rs().cool[id]; return !(c > 0); },
+  _setCool(id, n) { this._rs().cool[id] = n; },
+  _tickCool() { const rs = this._rs(); for (const k of Object.keys(rs.cool)) if (rs.cool[k] > 0) rs.cool[k]--; },
+  _cnt(key, cap) {
+    const rs = this._rs();
+    const cur = rs.cnt[key] || 0;
+    if (cap != null && cur >= cap) return false;
+    rs.cnt[key] = cur + 1;
+    return true;
+  },
+  _cntOf(key) { return this._rs().cnt[key] || 0; },
+  _turnReset() { const rs = this._rs(); rs.cnt = {}; this._tickCool(); },
+
+  /* 维度影像族：按角色名找队内唤醒体（「维度影像·朵尔」→ mods.ownerName="朵尔"） */
+  _byOwner(name) {
+    const b = State.battle;
+    return (b && b.allies.find(a => a.def.name === name)) || null;
+  },
+  /* 我方=共享血条架构（T7）：单位无独立 hp 字段——存活判断统一走 b.team.hp。
+   * T53 修正：T50 首批四处钩子误用 a.hp（undefined 恒不>0）静默失效——gukuPerHandCard/
+   * 低血条件/gukuSelf/gukuLowest 均改为队伍生命口径 */
+  _teamAlive(b) { return !!(b && b.team && b.team.hp > 0); },
+  /* 首领战判定（春之祭/恶童「首领战效果翻倍」——敌方含 tier==="boss" 视为首领战） */
+  _isBossFight() {
+    const b = State.battle;
+    return !!(b && b.enemies.some(e => e.def && e.def.tier === "boss"));
+  },
+
   /* ---------- 队伍静态键增量（state.js teamStats() 消费，无战斗也计入） ---------- */
   _teamSum() {
     const s = { damageBoost: 0, realmMastery: 0, blackImprint: 0, deathResist: 0 };
@@ -65,6 +97,10 @@ window.LevelRelics = {
   },
   maxEnergyBonus() {
     return this.defs().reduce((t, d) => t + ((d.mods && d.mods.maxEnergy) || 0), 0);
+  },
+  /* 回合开始主抽牌减量（哀嚎摇铃：回合开始时少抽 1 张——turn.js startTurn 消费） */
+  startDrawPenalty() {
+    return this.defs().reduce((t, d) => t + ((d.mods && d.mods.startDrawPenalty) || 0), 0);
   },
 
   /* ---------- 战斗内钩子（turn.js / cards.js / yogen.js 挂点调用） ---------- */
@@ -98,12 +134,34 @@ window.LevelRelics = {
           Log.add(`🏺 ${tag}：触腕 +${m.tentacles} 条（当前 ${b.tentacle.count}）`, "good");
         }
       }
+      /* T53 扩展：开战全体易伤/虚弱（春之祭/恶童/空间偏折仪；bossDouble=首领战翻倍） */
+      const dbl = m.bossDouble && this._isBossFight() ? 2 : 1;
+      if (m.vulnAll) {
+        for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_vul", m.vulnAll * dbl, null, tag);
+        Log.add(`🏺 ${tag}：所有敌人易伤 ${m.vulnAll * dbl} 层${m.bossDouble && dbl > 1 ? "（首领战翻倍）" : ""}`, "good");
+      }
+      if (m.weakAll) {
+        for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_weak", m.weakAll * dbl, null, tag);
+        Log.add(`🏺 ${tag}：所有敌人虚弱 ${m.weakAll * dbl} 层${m.bossDouble && dbl > 1 ? "（首领战翻倍）" : ""}`, "good");
+      }
+      /* T53 扩展：开战使所有敌人失去 N 点临时力量（妙手空空——只削临时实例 per，与刻印 drainTempStrAll 同口径） */
+      if (m.drainTempStrAll) {
+        let total = 0;
+        for (const e of b.enemies) {
+          for (const bi of (e.buffs || []).filter(x => x.defId === "buff_strength" && x.duration != null)) {
+            const cut = Math.min(bi.per || 0, m.drainTempStrAll);
+            bi.per -= cut; total += cut;
+          }
+        }
+        if (total) Log.add(`🏺 ${tag}：所有敌人失去 ${total} 点临时力量`, "good");
+      }
     }
   },
 
   onTurnStart() {
     const b = State.battle;
     if (!b) return;
+    this._turnReset();   // T53：每回合计数清零 + 冷却递减（先于本回合效果判定）
     for (const d of this.defs()) {
       const mods = d.mods || {};
       const tag = `关卡造物·${d.name}`;
@@ -118,14 +176,32 @@ window.LevelRelics = {
         if (m.energy) { b.energy += m.energy; Log.add(`🏺 ${tag}：回合开始算力 +${m.energy}`, "good"); }
         if (m.gukuAll) for (const a of b.allies) a.guku = Math.min(a.gukuMax || 100, a.guku + m.gukuAll);
         if (m.gukuAll) Log.add(`🏺 ${tag}：回合开始全体狂气 +${m.gukuAll}`, "good");
-        /* 低血条件按每名唤醒体独立判定（主语承前）；shield/tempStrength 为获得型 */
+        /* 低血条件按每名唤醒体独立判定（主语承前）；shield/tempStrength 为获得型。
+         * ⚠我方共享血条（T53 修正 T50 遗留）：生命% 取队伍血条，非单位 a.hp（无此字段） */
         if (m.shield || m.tempStrength) {
+          const teamPct = this._teamAlive(b) ? b.team.hp / (b.team.maxHp || 1) : 1;
           for (const a of b.allies) {
-            if (a.hp <= 0) continue;
-            const pct = a.hp / (a.maxHp || 1);
-            if (m.condLowHpPct != null && pct >= m.condLowHpPct) continue;
-            if (m.shield) { Damage.addShield(a, m.shield, tag); Log.add(`🏺 ${tag}：${a.def.name} 生命 ${Math.round(pct * 100)}%<25% → 护盾 +${m.shield}`, "good"); }
-            if (m.tempStrength) { Buffs.add(a, "buff_strength", 1, 1, tag, m.tempStrength); Log.add(`🏺 ${tag}：${a.def.name} 生命 ${Math.round(pct * 100)}%<25% → 临时力量 +${m.tempStrength}（1 回合）`, "good"); }
+            if (m.condLowHpPct != null && teamPct >= m.condLowHpPct) continue;
+            if (m.shield) { Damage.addShield(a, m.shield, tag); Log.add(`🏺 ${tag}：生命 ${Math.round(teamPct * 100)}%<25% → ${a.def.name} 护盾 +${m.shield}`, "good"); }
+            if (m.tempStrength) { Buffs.add(a, "buff_strength", 1, 1, tag, m.tempStrength); Log.add(`🏺 ${tag}：生命 ${Math.round(teamPct * 100)}%<25% → ${a.def.name} 临时力量 +${m.tempStrength}（1 回合）`, "good"); }
+          }
+        }
+        /* T53 扩展：狂气不足以爆发的唤醒体获得狂气（彩蛋时间——爆发门槛 guku<100；全队存活才生效） */
+        if (m.gukuIfBurstUnable && this._teamAlive(b)) {
+          let n = 0;
+          for (const a of b.allies) {
+            if (a.guku >= 100) continue;
+            a.guku = Math.min(a.gukuMax || 100, a.guku + m.gukuIfBurstUnable);
+            n++;
+          }
+          if (n) Log.add(`🏺 ${tag}：${n} 名狂气不足的唤醒体各获得 ${m.gukuIfBurstUnable} 狂气`, "good");
+        }
+        /* T53 扩展：维度影像族——回合开始指定唤醒体获得狂气（ownerName 定向） */
+        if (m.gukuSelf && m.ownerName && this._teamAlive(b)) {
+          const t = this._byOwner(m.ownerName);
+          if (t) {
+            t.guku = Math.min(t.gukuMax || 100, t.guku + m.gukuSelf);
+            Log.add(`🏺 ${tag}：${t.def.name} 回合开始获得 ${m.gukuSelf} 狂气（${t.guku}/${t.gukuMax}）`, "good");
           }
         }
       }
@@ -144,14 +220,25 @@ window.LevelRelics = {
         b.team.hp = Math.min(b.team.maxHp, b.team.hp + m.heal);
         Log.add(`🏺 ${tag}：回合结束回复 ${b.team.hp - before} 生命（${b.team.hp}/${b.team.maxHp}）`, "good");
       }
-      if (m.gukuPerHandCard) {
-        /* 手牌归属经卡定义 owner（shared 回落 allies[0]，与 play 同语义）；同名多张逐张计 */
+      if (m.gukuPerHandCard && this._teamAlive(b)) {
+        /* 手牌归属经卡定义 owner（shared 回落 allies[0]，与 play 同语义）；同名多张逐张计。
+         * ⚠我方共享血条（T53 修正 T50 遗留）：存活判断走 team.hp，原 a.hp>0 恒 false 从未生效 */
         for (const inst of b.piles.hand) {
           const def = Cards.def(inst);
           const owner = b.allies.find(a => a.def.id === def.owner) || b.allies[0];
-          if (owner && owner.hp > 0) owner.guku = Math.min(owner.gukuMax || 100, owner.guku + m.gukuPerHandCard);
+          if (owner) owner.guku = Math.min(owner.gukuMax || 100, owner.guku + m.gukuPerHandCard);
         }
         Log.add(`🏺 ${tag}：回合结束前手牌 ${b.piles.hand.length} 张 → 各所属唤醒体狂气 +${m.gukuPerHandCard}/张`, "good");
+      }
+      /* T53 扩展：姿态条件触腕伤害（裂头蚴——潮涌姿态回合结束 +78 触伤，3 回合冷却） */
+      if (m.tentacleDmg) {
+        if (m.stanceCond && (!b.tentacle || b.tentacle.stance !== m.stanceCond)) continue;
+        if (m.cool && !this._coolReady(d.id)) continue;
+        if (m.cool) this._setCool(d.id, m.cool);
+        if (b.tentacle) {
+          b.tentacle.dmgBonus = (b.tentacle.dmgBonus || 0) + m.tentacleDmg;
+          Log.add(`🏺 ${tag}：${m.stanceCond ? `处于${m.stanceCond}姿态，` : ""}触腕伤害 +${m.tentacleDmg}（冷却 ${m.cool} 回合）`, "good");
+        }
       }
     }
   },
@@ -163,6 +250,22 @@ window.LevelRelics = {
       const m = d.mods && d.mods.onBurst;
       if (!m) continue;
       const tag = `关卡造物·${d.name}`;
+      /* T53 扩展：一回合内第 N 次爆发触发（银白差分机——每回合计数，3 回合冷却） */
+      if (m.countGE) {
+        const k = `burst_${d.id}`;
+        if (!this._coolReady(d.id)) { this._rs().cnt[k] = 0; }
+        else {
+          const cur = this._cntOf(k) + 1;
+          if (cur >= m.countGE) {
+            this._rs().cnt[k] = 0;
+            this._setCool(d.id, m.cool || 3);
+            if (m.energy) { b.energy += m.energy; Log.add(`🏺 ${tag}：一回合第 ${m.countGE} 次爆发 → 算力 +${m.energy}（冷却 ${m.cool || 3}）`, "good"); }
+            if (m.silver) { b.silver += m.silver; Log.add(`🏺 ${tag}：一回合第 ${m.countGE} 次爆发 → 银钥 +${m.silver}（冷却 ${m.cool || 3}）`, "good"); }
+          } else {
+            this._rs().cnt[k] = cur;
+          }
+        }
+      }
       if (m.silver) { b.silver += m.silver; Log.add(`🏺 ${tag}：${ally.def.name} 爆发后银钥 +${m.silver}`, "good"); }
       if (m.tempStrength) { Buffs.add(ally, "buff_strength", 1, 1, tag, m.tempStrength); Log.add(`🏺 ${tag}：${ally.def.name} 爆发后临时力量 +${m.tempStrength}（1 回合）`, "good"); }
     }
@@ -185,6 +288,204 @@ window.LevelRelics = {
       }
       if (m.shield) for (const a of b.allies) { Damage.addShield(a, m.shield, tag); }
       if (m.shield) Log.add(`🏺 ${tag}：银钥觉醒后全体护盾 +${m.shield}`, "good");
+      /* T53 扩展三键 */
+      if (m.gukuAll) {
+        for (const a of b.allies) a.guku = Math.min(a.gukuMax || 100, a.guku + m.gukuAll);
+        Log.add(`🏺 ${tag}：银钥觉醒后全体狂气 +${m.gukuAll}`, "good");
+      }
+      if (m.heal) {
+        const before = b.team.hp;
+        b.team.hp = Math.min(b.team.maxHp, b.team.hp + m.heal);
+        Log.add(`🏺 ${tag}：银钥觉醒后回复 ${b.team.hp - before} 生命`, "good");
+      }
+      if (m.poisonAll) {
+        for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_poison", m.poisonAll, null, tag, 1);
+        Log.add(`🏺 ${tag}：银钥觉醒后所有敌人中毒 +${m.poisonAll} 层`, "good");
+      }
+    }
+  },
+
+  /* ---------- T53 新钩子：打出指令卡后（cards.js play 尾部调用）----------
+   * 键集：tempStrPerExhaust{v,cap} / drawIfHandLE{hand,draw,cap} / silverPerOwnerFirst{v} /
+   *       tempBoostPerDiffOwner{pct} / energyIfCostGE{cost,v,cap} / copyToDraw{copies,disc,cool} /
+   *       diffOwner4{gukuAll|tempBoost,gukuCost,cool} */
+  onCardPlayed(inst, owner, card) {
+    const b = State.battle;
+    if (!b || !card) return;
+    const isExhaust = inst.forceExhaust === true || card.exhaust === true;
+    const nonDerived = card.owner !== "shared";   // 近似：shared 卡=衍生（灵感/胚胎/硬币等）
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.onCardPlayed;
+      if (!m) continue;
+      const tag = `关卡造物·${d.name}`;
+      if (m.tempStrPerExhaust && isExhaust) {
+        if (this._cnt(`exh_${d.id}`, m.cap)) {
+          Buffs.add(b.allies[0], "buff_strength", 1, 1, tag, m.tempStrPerExhaust);
+          Log.add(`🏺 ${tag}：打出消耗牌 → 临时力量 +${m.tempStrPerExhaust}（本回合 ${this._cntOf(`exh_${d.id}`)}/${m.cap}）`, "good");
+        }
+      }
+      if (m.drawIfHandLE && b.piles.hand.length <= m.hand) {
+        if (this._cnt(`dhle_${d.id}`, m.cap)) {
+          Cards.draw(m.drawIfHandLE);
+          Log.add(`🏺 ${tag}：手牌≤${m.hand} → 抽 ${m.drawIfHandLE} 张（本回合 ${this._cntOf(`dhle_${d.id}`)}/${m.cap}）`, "good");
+        }
+      }
+      if (m.silverPerOwnerFirst && owner) {
+        const k = `opf_${d.id}_${owner.def.id}`;
+        if (!this._cntOf(k)) { this._rs().cnt[k] = 1; b.silver += m.silverPerOwnerFirst; Log.add(`🏺 ${tag}：${owner.def.name} 本回合首张指令卡 → 银钥 +${m.silverPerOwnerFirst}`, "good"); }
+      }
+      if (m.tempBoostPerDiffOwner && owner) {
+        const k = `dbo_${d.id}_${owner.def.id}`;
+        if (!this._cntOf(k)) {
+          this._rs().cnt[k] = 1;
+          Buffs.add(b.allies[0], "buff_boost_up", 1, 1, tag, m.tempBoostPerDiffOwner);
+          Log.add(`🏺 ${tag}：打出不同唤醒体（${owner.def.name}）指令卡 → 临时伤害强效 +${m.tempBoostPerDiffOwner}%`, "good");
+        }
+      }
+      if (m.energyIfCostGE && (card.cost || 0) >= m.cost) {
+        if (this._cnt(`ecg_${d.id}`, m.cap)) {
+          b.energy += m.v;
+          Log.add(`🏺 ${tag}：打出 ${m.cost} 费以上 → 算力 +${m.v}（本回合 ${this._cntOf(`ecg_${d.id}`)}/${m.cap}）`, "good");
+        }
+      }
+      if (m.copyToDraw && nonDerived) {
+        if (this._coolReady(d.id)) {
+          this._setCool(d.id, m.cool || 3);
+          for (let i = 0; i < (m.copies || 1); i++) {
+            const cp = Cards.inst(card.id, false);
+            if (m.disc) cp.disc = (cp.disc || 0) + m.disc;
+            b.piles.draw.splice(Math.floor(Math.random() * (b.piles.draw.length + 1)), 0, cp);
+          }
+          Log.add(`🏺 ${tag}：「${card.name}」×${m.copies || 1} 临时复制（算力-${m.disc || 0}）洗入抽牌堆（冷却 ${m.cool || 3} 回合）`, "good");
+        }
+      }
+      if (m.diffOwner4 && owner) {
+        const seen = `d4_${d.id}_${owner.def.id}`;
+        if (!this._cntOf(seen)) {
+          this._rs().cnt[seen] = 1;
+          const distinct = Object.keys(this._rs().cnt).filter(k => k.startsWith(`d4_${d.id}_`)).length;
+          if (distinct >= 4 && this._coolReady(d.id)) {
+            this._setCool(d.id, m.cool || 3);
+            if (m.gukuAll) { for (const a of b.allies) a.guku = Math.min(a.gukuMax || 100, a.guku + m.gukuAll); Log.add(`🏺 ${tag}：一回合 4 名不同唤醒体指令卡 → 全体狂气 +${m.gukuAll}（冷却 ${m.cool || 3}）`, "good"); }
+            if (m.tempBoost) { Buffs.add(b.allies[0], "buff_boost_up", 1, 1, tag, m.tempBoost); Log.add(`🏺 ${tag}：一回合 4 名不同唤醒体指令卡 → 伤害强效 +${m.tempBoost}%（近似「最终伤害」，冷却 ${m.cool || 3}）`, "good"); }
+            if (m.gukuCost) { for (const a of b.allies) a.guku = Math.max(0, a.guku - m.gukuCost); Log.add(`🏺 ${tag}：全体狂气 -${m.gukuCost}`, "sys"); }
+          }
+        }
+      }
+    }
+  },
+
+  /* ---------- T53 新钩子：释放钥令后（yogen.js cast 调用，castIdx=本回合第几次）---------- */
+  onYogenCast(castIdx) {
+    const b = State.battle;
+    if (!b) return;
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.onYogenCast;
+      if (!m) continue;
+      const tag = `关卡造物·${d.name}`;
+      if (m.refundPct && castIdx === 1) {
+        const back = Math.ceil(1000 * m.refundPct / 100);   // 钥令基础消耗 1000（Yogens.BASE_COST，避免循环依赖不引用）
+        b.silver += back;
+        Log.add(`🏺 ${tag}：首次钥令返还 ${m.refundPct}% → 银钥 +${back}`, "good");
+      }
+      if (m.refundSilver && castIdx === 1) {
+        b.silver += m.refundSilver;
+        Log.add(`🏺 ${tag}：首次钥令 → 银钥 +${m.refundSilver}`, "good");
+      }
+      if (m.onSecondCast && castIdx === 2) {
+        if (m.onSecondCast.silver) { b.silver += m.onSecondCast.silver; Log.add(`🏺 ${tag}：第二次钥令 → 银钥 +${m.onSecondCast.silver}`, "good"); }
+        if (m.onSecondCast.gukuAll) { for (const a of b.allies) a.guku = Math.min(a.gukuMax || 100, a.guku + m.onSecondCast.gukuAll); Log.add(`🏺 ${tag}：第二次钥令 → 全体狂气 +${m.onSecondCast.gukuAll}`, "good"); }
+      }
+      if (m.poisonFirstCast && castIdx === 1) {
+        for (const e of b.enemies) if (e.hp > 0) Buffs.add(e, "debuff_poison", m.poisonFirstCast, null, tag, 1);
+        Log.add(`🏺 ${tag}：首次钥令 → 所有敌人中毒 +${m.poisonFirstCast} 层`, "good");
+      }
+      if (m.tentacleStrikeFirstCast && castIdx === 1 && typeof Tentacle !== "undefined" && b.tentacle) {
+        for (const e of b.enemies.filter(x => x.hp > 0)) {
+          for (let i = 0; i < m.tentacleStrikeFirstCast; i++) Tentacle.strike(e, m.mult || 1, `造物·${d.name}`, null);
+        }
+        Log.add(`🏺 ${tag}：首次钥令激发所有触腕攻击 ${m.tentacleStrikeFirstCast} 次（${Math.round((m.mult || 1) * 100)}% 伤害）`, "good");
+      }
+    }
+  },
+
+  /* ---------- T53 新钩子：湮灭后（realmSys.annihilation 调用）---------- */
+  onAnnihilate() {
+    const b = State.battle;
+    if (!b) return;
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.onAnnihilate;
+      if (!m) continue;
+      if (m.cool && !this._coolReady(d.id)) continue;
+      if (m.cool) this._setCool(d.id, m.cool);
+      const tag = `关卡造物·${d.name}`;
+      if (m.shield) for (const a of b.allies) Damage.addShield(a, m.shield, tag);
+      if (m.shield) Log.add(`🏺 ${tag}：湮灭后全体护盾 +${m.shield}（冷却 ${m.cool}）`, "good");
+      if (m.gukuLowest && this._teamAlive(b)) {
+        /* ⚠我方共享血条（T53 修正 T50 遗留）：a.hp 无字段，存活走 team.hp */
+        const t = b.allies.slice().sort((x, y) => x.guku - y.guku)[0];
+        if (t) { t.guku = Math.min(t.gukuMax || 100, t.guku + m.gukuLowest); Log.add(`🏺 ${tag}：湮灭后 ${t.def.name}（狂气最低）+${m.gukuLowest} 狂气（冷却 ${m.cool}）`, "good"); }
+      }
+    }
+  },
+
+  /* ---------- T53 新钩子：造成主动伤害后（damage.js deal 尾部调用）---------- */
+  onDeal(source, target) {
+    const b = State.battle;
+    if (!b || !source || source.side !== "ally") return;
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.onDeal;
+      if (!m) continue;
+      if (m.tempStrPerHit && this._cnt(`hit_${d.id}`, m.cap)) {
+        Buffs.add(b.allies[0], "buff_strength", 1, 1, `关卡造物·${d.name}`, m.tempStrPerHit);
+        Log.add(`🏺 关卡造物·${d.name}：造成伤害 → 临时力量 +${m.tempStrPerHit}（本回合 ${this._cntOf(`hit_${d.id}`)}/${m.cap}）`, "good");
+      }
+    }
+  },
+
+  /* 视力矫正器族：本回合前 N 次主动/触腕伤害 ×pct（deal/strike 各计一次同一计数） */
+  dealDamageMult() {
+    const b = State.battle;
+    if (!b) return 1;
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.dealMult;
+      if (!m) continue;
+      if (this._cntOf(`dmgN_${d.id}`) < m.times) return 1 + m.pct / 100;
+    }
+    return 1;
+  },
+  countDeal() {
+    const b = State.battle;
+    if (!b) return;
+    for (const d of this.defs()) if (d.mods && d.mods.dealMult) this._rs().cnt[`dmgN_${d.id}`] = this._cntOf(`dmgN_${d.id}`) + 1;
+  },
+
+  /* ---------- T53 新钩子：切换触腕姿态后（tentacle.setStance 调用）---------- */
+  onSetStance(name) {
+    const b = State.battle;
+    if (!b) return;
+    for (const d of this.defs()) {
+      const m = d.mods && d.mods.onSetStance;
+      if (!m || m.stance !== name) continue;
+      if (m.cool && !this._coolReady(d.id)) continue;
+      if (m.cool) this._setCool(d.id, m.cool);
+      const tag = `关卡造物·${d.name}`;
+      if (m.tentacleStrike && typeof Tentacle !== "undefined" && b.tentacle) {
+        for (const e of b.enemies.filter(x => x.hp > 0)) {
+          for (let i = 0; i < m.tentacleStrike; i++) Tentacle.strike(e, m.mult || 1, `造物·${d.name}`, null);
+        }
+        Log.add(`🏺 ${tag}：使用${name}姿态 → 激发所有触腕攻击 ${m.tentacleStrike} 次（冷却 ${m.cool}）`, "good");
+      }
+      if (m.drainTempStrAll) {
+        let total = 0;
+        for (const e of b.enemies) {
+          for (const bi of (e.buffs || []).filter(x => x.defId === "buff_strength" && x.duration != null)) {
+            const cut = Math.min(bi.per || 0, m.drainTempStrAll);
+            bi.per -= cut; total += cut;
+          }
+        }
+        if (total) Log.add(`🏺 ${tag}：使用${name}姿态 → 所有敌人失去 ${total} 点临时力量（冷却 ${m.cool}）`, "good");
+      }
     }
   },
 
@@ -200,13 +501,66 @@ window.LevelRelics = {
     }
   },
 
+  /* ---------- 星辰篇·时空扭曲环境规则（T53 部分实装；State.levelEnv=规则名数组） ----------
+   * 存在悖论：战斗开始把死亡抵抗 ×75% 转为最大生命%（至多转换 300% 死抗、至多 +10% maxHp；
+   *           转换后死抗不扣减——「转换是否移除原值」未实测，保守口径 notes 注明）
+   * 无底创痕：首领战，生命回复量每累计达 100% maxHp → 后续回复 -25%（envWoundHealPen 乘区）
+   *           + 死亡抵抗总量 +25 个百分点（envWoundDR），最多 3 次（Damage.heal / tryDeathResist 消费）
+   * 棱彩透镜/命运光锥：依赖反击系统与「光锥界限」等未入库卡，维持转录未实装（UNMODELED 登记） */
+  levelEnvOn() { return Array.isArray(State.levelEnv) ? State.levelEnv : []; },
+  envHas(name) { return this.levelEnvOn().includes(name); },
+  envDeathResistBonus() {
+    const b = State.battle;
+    if (!b || !this.envHas("无底创痕")) return 0;
+    return (b.envWoundDR || 0);
+  },
+  envHealPen() {
+    const b = State.battle;
+    if (!b || !this.envHas("无底创痕")) return 1;
+    return Math.max(0, 1 - 0.25 * (b.envWoundHealPen || 0));
+  },
+  applyEnvOnBattle() {
+    const b = State.battle;
+    if (!b) return;
+    if (this.envHas("存在悖论") && !b.envParadoxApplied) {
+      b.envParadoxApplied = true;
+      const dr = this._teamDRSnapshot();
+      const bonusPct = Math.min(10, Math.min(dr * 3, dr * 0.75));   // 至多转换 300% 死抗、至多 +10% maxHp
+      if (bonusPct > 0) {
+        const add = Math.ceil(b.team.maxHp * bonusPct / 100);
+        b.team.maxHp += add; b.team.hp += add;
+        b.envParadoxDR = dr;
+        Log.add(`🌀 时空扭曲·存在悖论：死亡抵抗 ${dr}% ×75% → 最大生命 +${add}（+${bonusPct}%）`, "good");
+      }
+    }
+    if (this.envHas("无底创痕")) {
+      b.envWoundHealed = 0; b.envWoundHealPen = 0; b.envWoundDR = 0;
+      if (this._isBossFight()) Log.add(`🌀 时空扭曲·无底创痕：首领战生效（回复每累计 100% maxHp → 后续回复-25% + 死抗+25，至多 3 次）`, "sys");
+    }
+  },
+  _teamDRSnapshot() {
+    try { return Math.min(100, State.teamStats().deathResist || 0); } catch (e) { return 0; }
+  },
+  /* 无底创痕：heal 后累计（damage.js heal 尾部调用，amount=实际回复量） */
+  envOnHeal(amount) {
+    const b = State.battle;
+    if (!b || !this.envHas("无底创痕") || !this._isBossFight() || amount <= 0) return;
+    b.envWoundHealed = (b.envWoundHealed || 0) + amount;
+    while (b.envWoundHealed >= b.team.maxHp && (b.envWoundHealPen || 0) < 3) {
+      b.envWoundHealed -= b.team.maxHp;
+      b.envWoundHealPen = (b.envWoundHealPen || 0) + 1;
+      b.envWoundDR = (b.envWoundDR || 0) + 25;
+      Log.add(`🌀 无底创痕：累计回复达 100% maxHp → 后续回复效果 -25%、死亡抵抗 +25（${b.envWoundHealPen}/3 次）`, "good");
+    }
+  },
+
   /* AI 顾问未建模清单（advisor KNOWN/UNMODELED 携带；清单外禁给确定性数值结论） */
   UNMODELED: [
-    "关卡造物 224 条中 187 条效果未建模（文字已录 DBF.levelRelics.notes）：反击/湮灭/超维回合/猩红熔炉/胚胎融合/吞噬/姿态激发/探索层造物上限/维度影像族（61 条整族）/银白差分机冷却/每回合计数乘区/钥令返还/治疗护盾增幅键/「额外生效」族",
-    "关卡造物已建模子集仅限 LevelRelics.MODELED 列出的键；复合条件（如普特尼晨报后半句）整条按未建模处理",
+    "关卡造物 224 条中未建模条目见 data/level_relics.js notes（T53 二期后：可结算家族已建模，残余=反击/湮灭子句/超维空间/猩红熔炉/胚胎融合/吞噬/姿态激发部分/维度影像族第二子句/钥令返还部分/治疗护盾增幅键/「额外生效」族/每回合计数乘区部分）",
     "刻印 35 条中 14 条未建模：镜像/灵感/折跃/统御/嗜血/尖刺/回声（超维空间/洗入/触腕次数/胚胎融合/反击/额外生效依赖）",
     "刻印毒素的「触发 25%/50% 中毒」立即结算未建模；「临时力量」以 buff_strength 1 回合近似",
-    "星辰篇环境「时空扭曲」组（存在悖论/无底创痕/棱彩透镜/命运光锥）未实装（反击/中毒上限/凝视等依赖）",
+    "星辰篇环境「时空扭曲」组：存在悖论/无底创痕已部分实装（死抗转maxHp 转换后是否扣减未实测；无底创痕触发后死抗+25 为动态加成）；棱彩透镜/命运光锥未实装（反击系统/「光锥界限」等卡未入库）",
+    "维度影像族 61 条仅建模第一子句（回合开始 +15 狂气）；第二子句（角色专属机制）逐条 notes 未建模",
   ],
 };
 

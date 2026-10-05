@@ -236,6 +236,8 @@ const Cards = {
     /* 刻印触发（T50 关卡刻印 Sigils）：附加在实例上的词缀，打出时结算 onPlay 子集。
      * ⚠与 T38「卡牌刻印（回响语境，未建模无数值影响）」同名不同物 */
     if (typeof Sigils !== "undefined" && inst.sigil) Sigils.onCardPlayed(inst, owner);
+    /* 关卡造物打出钩子（T53）：小八音盒/魔术手套/伶牙俐齿/万花筒/哀嚎摇铃/失声唱机/面纱钩爪族 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onCardPlayed(inst, owner, card);
     inst.playCount = (inst.playCount || 0) + 1;   // T38 D：实例打出次数（变身/每第N次类语义按打出计，不按伤害段计）
     /* 巨剑·鲸落合成旗（T42②）：短刃·噬每第 3 次打出 → 本回合下次「长刃·陨」合成鲸落（同回合语义，endTurn 清旗） */
     if (card.whaleFuse && inst.playCount % 3 === 0 && !b.whaleFuseReady) {

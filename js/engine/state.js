@@ -621,7 +621,10 @@ const State = {
   tryDeathResist() {
     const b = this.battle;
     if (!b || b.team.hp > 0 || b.phase === "over") return false;
-    const resist = Math.min(100, this.teamStats().deathResist || 0);
+    let dr = this.teamStats().deathResist || 0;
+    /* 时空扭曲·无底创痕（T53）：首领战累计回复触发的死抗动态加成（+25/层，至多 3 层） */
+    if (typeof LevelRelics !== "undefined") dr += LevelRelics.envDeathResistBonus();
+    const resist = Math.min(100, dr);
     if (resist <= 0) return false;
     b.deathResistChance = (b.deathResistChance != null) ? b.deathResistChance : 1;
     const chance = resist * b.deathResistChance;

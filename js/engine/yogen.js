@@ -92,6 +92,8 @@ const Yogens = {
     Log.add(`<b style="color:var(--gold)">🔑 释放钥令「${yg.name}」</b>（${opts.via === "forgotten" ? "尘封旧忆" : "携带"} · 消耗 1000 银钥，余 ${b.silver} · 本回合第 ${b.yogenCastsThisTurn} 次）`, "sys");
     /* 命轮钥令钩子（T8 四期）：专注精神/搭档特训/理智明灯/慈悲的哺育 */
     if (typeof Wheels !== "undefined") Wheels.onYogenCast(id);
+    /* 关卡造物钥令钩子（T53）：幸运兔脚返还/精密计时器第二次/小黄螺激发触腕/先知的许愿灯 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onYogenCast(b.yogenCastsThisTurn);
     this.resolve(yg, opts.choice || {});
     Turn.checkEnd();
     State.notify();

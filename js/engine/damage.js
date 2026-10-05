@@ -241,6 +241,14 @@ const Damage = {
     const isCrit = fc === true ? true : fc === false ? false : (crPct > 0 && Math.random() * 100 < crPct);
     const critArg = fc === true ? true : (crPct > 0 ? (fc === false ? false : isCrit) : undefined);
     const r = this.compute({ source, target, card, eff, crit: critArg });
+    /* 关卡造物乘区（T53 视力矫正器族）：本回合前 N 次主动/触腕伤害 ×pct（独立最终乘区，归组未实测） */
+    if (source && source.side === "ally" && typeof LevelRelics !== "undefined") {
+      const mul = LevelRelics.dealDamageMult();
+      if (mul !== 1) {
+        r.final = Math.max(0, Math.ceil(r.final * mul));
+        r.steps.push({ label: "🏺 关卡造物乘区", value: r.final, factorText: `× ${mul.toFixed(2)}`, note: "本回合前 N 次伤害提高（视力矫正器族）" });
+      }
+    }
     this.applyRawDamage(target, r.final, (isCrit ? "暴击！" : "") + (label || (card ? card.name : "伤害")), r);
     if (isCrit && window.UIBoard) UIBoard.float(target.uid, "暴击", "crit");
     if (window.UIBoard) UIBoard.float(target.uid, `-${r.final}`, "dmg");
@@ -270,6 +278,11 @@ const Damage = {
     /* 怒涛姿态（触腕 T7）：造成主动伤害后使 1 条触腕以 50% 触腕伤害追击目标（传来源=成员触腕词条生效路径） */
     if (typeof Tentacle !== "undefined" && source && source.side === "ally") {
       Tentacle.onAllyDeal(target, source);
+    }
+    /* 关卡造物（T53）：缠丝玛瑙「每次造成伤害+临时力量（cap）」+ 视力矫正器伤害次数计数（主动与触腕同一计数） */
+    if (source && source.side === "ally" && typeof LevelRelics !== "undefined") {
+      LevelRelics.onDeal(source, target);
+      LevelRelics.countDeal();
     }
     return r;
   },
@@ -365,10 +378,19 @@ const Damage = {
       amount = Math.max(0, Math.round(amount * factor));
       if (factor > 1) Log.add(`<span class="dim">${unit.def.name} 回复受命轮增益 ×${factor.toFixed(2)}</span>`, "sys");
     }
+    /* 时空扭曲·无底创痕（T53）：首领战累计回复每达 100% maxHp 后，后续回复效果 -25%/层（至多 3 层） */
+    if (unit.side === "ally" && typeof LevelRelics !== "undefined") {
+      const pen = LevelRelics.envHealPen();
+      if (pen !== 1) {
+        amount = Math.max(0, Math.round(amount * pen));
+        Log.add(`<span class="dim">🌀 无底创痕：回复效果 ×${pen.toFixed(2)}</span>`, "sys");
+      }
+    }
     if (unit.side === "ally") {
       const t = State.battle.team;
       const real = Math.min(amount, t.maxHp - t.hp);
       t.hp += real;
+      if (typeof LevelRelics !== "undefined") LevelRelics.envOnHeal(real);   // 无底创痕累计（含打满 maxHp 的溢出不计）
       Log.add(`<b>${unit.def.name}</b> 回复 ${real} 点生命（${label}）→ 队伍生命 ${t.hp}/${t.maxHp}`, "good");
       if (window.UIBoard) UIBoard.floatTeam(`+${real}`, "heal");
     } else {

@@ -123,6 +123,8 @@ const RealmSys = {
     const [left] = b.hyperCards.splice(0, 1);
     b.piles.hand.push(Cards.inst("shared_inspire", false));
     Log.add(`🌀 湮灭：移除超维空间的「${Cards.def(left).name}」，置 1 张「灵感」入手牌`, "good");
+    /* 关卡造物湮灭钩子（T53）：超弦怀表护盾/时间之虫狂气，3 回合冷却 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onAnnihilate();
     State.notify();
   },
 

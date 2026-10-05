@@ -2265,7 +2265,7 @@ function runAllTests() {
         && !!DBF.levelRelics.find(x => x.name === "维度影像·血链·希洛");
     })());
     check("T50: 未建模登记（mods 空 + notes 在案）", (() => {
-      const r = DBF.levelRelics.find(x => x.name === "普特尼晨报");
+      const r = DBF.levelRelics.find(x => x.name === "刺荨麻背心");   // T53 后普特尼晨报已部分建模，换仍整条未建模的
       return r && Object.keys(r.mods).length === 0 && /未建模/.test(r.notes);
     })());
     /* --- B 关卡造物结算 --- */
@@ -2613,6 +2613,223 @@ function runAllTests() {
     check("T52 胚胎吞噬：2 人队力量槽 1 层（非 2 倍）",
       embInst && embInst.stacks === 1,
       "slots:" + JSON.stringify((b2.team.buffs || []).map(x => ({ per: x.per, s: x.stacks }))));
+    State.reset();
+  }
+
+  console.log("== 8.39 T53 关卡造物二期（家族批量建模 + 时空扭曲环境部分实装）==");
+  {
+    const deck = (ids) => { State.levelRelicDeck = ids.slice(); };
+    const strOf = (u) => __buffsAll(u, "buff_strength").reduce((s, x) => s + (x.per || 0) * x.stacks, 0);
+
+    check("T53 已建模造物=158 条", DBF.levelRelics.filter(r => r.mods && Object.keys(r.mods).length > 0).length === 158,
+      "实际:" + DBF.levelRelics.filter(r => r.mods && Object.keys(r.mods).length > 0).length);
+
+    /* 维度影像族第一子句：回合开始 ownerName 定向 +15 狂气 */
+    State.reset(); State.newBattle();
+    State.addAlly("char_doll", 1); State.addAlly("char_ogilvy", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    let b = State.battle;
+    let doll = b.allies[0], og = b.allies[1];
+    deck(["lr_166"]);   // 维度影像·朵尔
+    doll.guku = 0; og.guku = 0;
+    LevelRelics.onTurnStart();
+    check("T53 维度影像·朵尔：回合开始+15狂气（定向不串）", doll.guku === 15 && og.guku === 0, `朵:${doll.guku} 奥:${og.guku}`);
+
+    /* 彩蛋时间：狂气不足者+10、可爆发者不加 */
+    deck(["lr_001"]);
+    doll.guku = 50; og.guku = 100;
+    LevelRelics.onTurnStart();
+    check("T53 彩蛋时间：狂气<100 者+10、≥100 不加", doll.guku === 60 && og.guku === 100, `朵:${doll.guku} 奥:${og.guku}`);
+    State.reset();
+
+    /* 小八音盒：开战力量 55 + 打出消耗牌临时力量 16（cap10） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_054"]);
+    Turn.startBattle();
+    b = State.battle; doll = b.allies[0];
+    check("T53 小八音盒：开战力量55（共享一份）", strOf(doll) === 55, "力:" + strOf(doll));
+    b.energy = 9;
+    const exInst = Cards.inst("shared_inspire", false);
+    exInst.forceExhaust = true;
+    b.piles.hand = [exInst];
+    b.piles.draw = []; b.piles.discard = [];
+    Cards.play(exInst.uid);
+    const tmpSlots = __buffsAll(doll, "buff_strength").filter(x => x.duration === 1);
+    check("T53 小八音盒：打出消耗牌 → 临时力量+16（1回合）", tmpSlots.length === 1 && tmpSlots[0].per === 16,
+      "tmp:" + JSON.stringify(tmpSlots.map(x => ({ per: x.per, s: x.stacks }))));
+    State.reset();
+
+    /* 魔术手套/伶牙俐齿/哀嚎摇铃/银白差分机/幸运兔脚：直调钩子验证计数与 cap */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addAlly("char_ogilvy", 1);
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle; doll = b.allies[0]; og = b.allies[1];
+    const insp = State.getCard("shared_inspire");
+    const mkInst = () => { const i = Cards.inst("shared_inspire", false); b.piles.hand.push(i); return i; };
+
+    deck(["lr_099"]);   // 魔术手套
+    b.piles.draw = [Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false)];
+    b.piles.hand = [];
+    const h1 = mkInst(), h2 = mkInst();   // 打出后剩 2 张（≤3）
+    LevelRelics.onCardPlayed(h1, doll, insp);
+    check("T53 魔术手套：手牌≤3 → 抽1", b.piles.hand.length === 3, "手:" + b.piles.hand.length);
+    b.piles.hand = []; b.piles.draw = [Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false)];
+    b.relicState.cnt = {};   // 场景A已消耗1次cap，清计数独立验证cap
+    /* onCardPlayed 在打出后被调（该卡已离手）——模拟「打出后剩 ≤3 张」的时刻连续触发 3 次 */
+    for (let i = 0; i < 3; i++) {
+      const g = Cards.inst("shared_inspire", false);
+      b.piles.hand.push(g); b.piles.hand.pop();   // 打出：离手
+      LevelRelics.onCardPlayed(g, doll, insp);
+    }
+    check("T53 魔术手套：cap2（前2次各抽1、第3次拒）", b.piles.hand.length === 2, "手:" + b.piles.hand.length);
+
+    deck(["lr_116"]);   // 伶牙俐齿
+    b.silver = 0;
+    const s1 = mkInst(); LevelRelics.onCardPlayed(s1, doll, insp);
+    const silverAfter1 = b.silver;
+    const s2 = mkInst(); LevelRelics.onCardPlayed(s2, doll, insp);
+    const s3 = mkInst(); LevelRelics.onCardPlayed(s3, og, insp);
+    check("T53 伶牙俐齿：每唤醒体每回合首张+100银钥", silverAfter1 === 100 && b.silver === 200, `首:${silverAfter1} 合:${b.silver}`);
+
+    deck(["lr_098"]);   // 哀嚎摇铃
+    check("T53 哀嚎摇铃：回合开始少抽1", LevelRelics.startDrawPenalty() === 1);
+    b.energy = 0;
+    const c3 = DBF.cards.find(c => (c.cost || 0) >= 3 && c.owner !== "shared");
+    const e1 = mkInst(); LevelRelics.onCardPlayed(e1, doll, c3);
+    const e2 = mkInst(); LevelRelics.onCardPlayed(e2, doll, c3);
+    const e3 = mkInst(); LevelRelics.onCardPlayed(e3, doll, c3);
+    const eAtCap = b.energy;
+    const e4 = mkInst(); LevelRelics.onCardPlayed(e4, doll, c3);
+    check("T53 哀嚎摇铃：≥3费牌+1算力 cap3", eAtCap === 3 && b.energy === 3, "算力:" + b.energy);
+    deck([]);
+
+    deck(["lr_109"]);   // 银白差分机
+    b.energy = 0;
+    LevelRelics.onBurst(doll); LevelRelics.onBurst(doll); LevelRelics.onBurst(doll);
+    const pre4 = b.energy;
+    LevelRelics.onBurst(doll);
+    check("T53 银白差分机：一回合第4次爆发 → +3算力", pre4 === 0 && b.energy === 3, `前3次:${pre4} 第4次后:${b.energy}`);
+    b.energy = 0;
+    LevelRelics.onBurst(doll);
+    check("T53 银白差分机：冷却中不再触发（计数重置）", b.energy === 0, "算力:" + b.energy);
+    deck([]);
+
+    deck(["lr_120"]);   // 幸运兔脚
+    b.silver = 0;
+    LevelRelics.onYogenCast(1);
+    const refund1 = b.silver;
+    LevelRelics.onYogenCast(2);
+    check("T53 幸运兔脚：首次钥令返还25%（+250），第二次不返", refund1 === 250 && b.silver === 250, `首:${refund1} 合:${b.silver}`);
+    deck([]);
+    State.reset();
+
+    /* 裂头蚴：潮涌姿态回合结束触伤+78，3回合冷却 */
+    State.newBattle();
+    State.addAlly("char_tulu", 1);   // 图鲁（深海，单人全深海触腕激活）
+    State.addEnemy("enemy_dummy");
+    deck(["lr_153"]);
+    Turn.startBattle();
+    b = State.battle;
+    check("T53 前置：触腕激活且潮涌", !!b.tentacle && b.tentacle.stance === "潮涌");
+    const d0 = Tentacle.singleDamage();
+    LevelRelics.onTurnEnd();
+    const d1 = Tentacle.singleDamage();
+    LevelRelics.onTurnEnd();
+    const d2 = Tentacle.singleDamage();
+    check("T53 裂头蚴：潮涌回合结束触伤+78，冷却中不叠加", d1 === d0 + 78 && d2 === d0 + 78, `基:${d0} 后:${d1}/${d2}`);
+    State.reset();
+
+    /* 缠丝玛瑙 + 视力矫正器：deal 乘区与临时力量（State.forceCrit=false 防暴击 roll 污染期望值） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_047", "lr_094"]);
+    Turn.startBattle();
+    b = State.battle; doll = b.allies[0];
+    State.forceCrit = false;   // 本场景禁暴击（5% roll 会让 final×1.5 破坏期望链）
+    const dummy = b.enemies[0];
+    const r1 = Damage.deal({ source: doll, target: dummy, card: null, eff: { value: 10 }, label: "t" });
+    const tmpAgate = __buffsAll(doll, "buff_strength").filter(x => x.duration === 1);
+    check("T53 视力矫正器：第1次伤害×1.15（10→12）", r1.final === 12, "final:" + r1.final);
+    check("T53 缠丝玛瑙：造成伤害 → 临时力量+12", tmpAgate.length === 1 && tmpAgate[0].per === 12, "tmp:" + JSON.stringify(tmpAgate.map(x => x.per)));
+    for (let i = 0; i < 5; i++) Damage.deal({ source: doll, target: dummy, card: null, eff: { value: 10 }, label: "t" });
+    const rN = Damage.deal({ source: doll, target: dummy, card: null, eff: { value: 10 }, label: "t" });
+    /* 第7次：乘区已停（前5次），伤害=10+缠丝玛瑙累计临时力量(12×6层=72)=82 */
+    check("T53 视力矫正器：前5次后不再乘（82=10+缠丝72力，非×1.15）", rN.final === 10 + 12 * 6, "final:" + rN.final);
+    State.forceCrit = null;
+    State.reset();
+
+    /* 妙手空空：开战削敌临时力量（buff 须在 startBattle 前挂上） */
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addEnemy("enemy_dummy");
+    deck(["lr_139"]);
+    Buffs.add(State.battle.enemies[0], "buff_strength", 1, 1, "临时", 50);
+    Turn.startBattle();
+    b = State.battle;
+    const biDrain = b.enemies[0].buffs.find(x => x.defId === "buff_strength");
+    check("T53 妙手空空：开战敌临时力量-93（50→0 封底）", biDrain && biDrain.per === 0, "per:" + (biDrain ? biDrain.per : "无"));
+    State.reset();
+
+    /* 春之祭：开战易伤+首领战翻倍 */
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addEnemy("enemy_dummy");
+    State.addEnemy("enemy_w3_fleshboss");   // tier boss
+    deck(["lr_087"]);
+    Turn.startBattle();
+    b = State.battle;
+    const vulOf = (u) => (u.buffs || []).filter(x => x.defId === "debuff_vul").reduce((s, x) => s + x.stacks, 0);
+    const nBoss = b.enemies.filter(e => e.def.tier === "boss").length;
+    /* 「首领战效果翻倍」=效果整体翻倍：首领战中所有敌人 1→2 层 */
+    check("T53 春之祭：首领战全体翻倍（普2/首2）", nBoss === 1 && vulOf(b.enemies[0]) === 2 && vulOf(b.enemies[1]) === 2,
+      `普:${vulOf(b.enemies[0])} 首:${vulOf(b.enemies[1])}`);
+    State.reset();
+
+    /* 超弦怀表：湮灭后护盾（直调钩子，冷却验证） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_126"]);
+    Turn.startBattle();
+    b = State.battle; doll = b.allies[0];
+    LevelRelics.onAnnihilate();
+    const sh1 = doll.shield;
+    LevelRelics.onAnnihilate();
+    check("T53 超弦怀表：湮灭后护盾+310，冷却中不叠加", sh1 === 310 && doll.shield === 310, `盾:${sh1}/${doll.shield}`);
+    State.reset();
+
+    /* 时空扭曲·存在悖论：死抗×75% → maxHp（至多10%） */
+    DBF.relicDeck = ["relic_snake_molt"];   // 旧库怪蛇残蜕=死抗8（teamStats 消费）
+    State.levelEnv = ["存在悖论"];
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    check("T53 存在悖论：死抗8×75%=6% → maxHp+6%", b.envParadoxApplied === true && b.envParadoxDR === 8,
+      `applied:${b.envParadoxApplied} dr:${b.envParadoxDR}`);
+    DBF.relicDeck = []; State.levelEnv = [];
+    State.reset();
+
+    /* 时空扭曲·无底创痕：累计回复触发回复衰减+死抗加成 */
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addEnemy("enemy_w3_fleshboss");   // 首领战
+    State.levelEnv = ["无底创痕"];
+    Turn.startBattle();
+    b = State.battle;
+    check("T53 前置：无底创痕环境初始 0", LevelRelics.envHealPen() === 1 && LevelRelics.envDeathResistBonus() === 0);
+    LevelRelics.envOnHeal(b.team.maxHp + 10);
+    check("T53 无底创痕：累计回复≥100%maxHp → 回复×0.75、死抗+25（1/3）",
+      LevelRelics.envHealPen() === 0.75 && LevelRelics.envDeathResistBonus() === 25 && b.envWoundHealPen === 1,
+      `pen:${LevelRelics.envHealPen()} dr:${LevelRelics.envDeathResistBonus()}`);
+    State.levelEnv = [];
+    /* 快照携带造物运行时状态 */
+    b.relicState = { cool: { lr_126: 2 }, cnt: { hit_lr_047: 3 } };
+    const ser53 = Turn.serializeState();
+    check("T53 造物冷却/计数随快照还原", ser53.relicState && ser53.relicState.cool.lr_126 === 2 && ser53.relicState.cnt.hit_lr_047 === 3,
+      JSON.stringify(ser53.relicState));
     State.reset();
   }
 

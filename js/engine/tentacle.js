@@ -91,8 +91,10 @@ const Tentacle = {
     grabPower(b.team && b.team.buffs);
     /* 临时触腕伤害（T32 实测批：螺湮圆舞潮涌等「触腕伤害+[攻×X%]」）——加算点数，⚠加算位置未经实测，估算入基础段 */
     const tempDmg = this._tempDmgSum();
+    /* 关卡造物固定触伤加算（T53 裂头蚴：潮涌姿态回合结束 +78，冷却 3） */
+    const relicBonus = b.tentacle.dmgBonus || 0;
     const main = pool * 0.095 * (1 + boost / 100);
-    if (tempDmg > 0) return Math.ceil(main + symbiosis + power * 0.5 + tempDmg);
+    if (tempDmg > 0 || relicBonus > 0) return Math.ceil(main + symbiosis + power * 0.5 + tempDmg + relicBonus);
     return Math.ceil(main + symbiosis + power * 0.5);
   },
 
@@ -164,7 +166,13 @@ const Tentacle = {
       v *= 1 + cdPct / 100; v = Math.ceil(v); isCrit = true;
       steps.push({ label: "⑥ 触腕暴击", value: v, factorText: `× ${(1 + cdPct / 100).toFixed(2)}`, note: `触腕暴击率 ${crPct}%（全队和×50%）` });
     }
-    const final = v > 0 ? Math.ceil(v) : 0;
+    let final = v > 0 ? Math.ceil(v) : 0;
+    /* 关卡造物乘区（T53 视力矫正器族）：触腕伤害同吃「本回合前 N 次主动/触腕伤害」计数 */
+    if (typeof LevelRelics !== "undefined") {
+      const mul = LevelRelics.dealDamageMult();
+      if (mul !== 1) { final = Math.max(0, Math.ceil(final * mul)); steps.push({ label: "🏺 关卡造物乘区", value: final, factorText: `× ${mul.toFixed(2)}` }); }
+      LevelRelics.countDeal();
+    }
     steps.push({ label: "⑦ 最终伤害", value: final, note: "向上取整" });
     Damage.applyRawDamage(target, final, `🐙${label}${isCrit ? "（暴击）" : ""}`, { final, steps, warnings: [], crit: isCrit });
     return { final, crit: isCrit };
@@ -263,6 +271,8 @@ const Tentacle = {
       for (const a of b.allies) { const real = (typeof Damage !== "undefined") ? Damage.addShield(a, sh) : (a.shield += sh, sh); void real; }
       Log.add(`🐙 静海：全体获得护盾 ${sh}/人（8% 最大生命均分，合计 ${sh * b.allies.length}）`, "good");
     }
+    /* 关卡造物姿态钩子（T53）：螺湮的欢愉（怒涛激发触腕攻击）/无名附肢（静海削敌临时力量），3 回合冷却 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onSetStance(name);
     State.notify();
     return true;
   }
