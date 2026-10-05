@@ -2446,7 +2446,7 @@ function runAllTests() {
   {
     check("入库总数: 钥令 53 条", DBF.yogens.length === 53, "实际:" + DBF.yogens.length);
     check("补录批 24 条全带效果数组", DBF.yogens.slice(29).every(y => Array.isArray(y.eff) && y.eff.length > 0));
-    check("衍生卡入库: 莉雅的硬币(建模)+闪耀偏方骰(占位)", !!State.getCard("shared_leya_coin") && !!State.getCard("shared_dice") && State.getCard("shared_leya_coin").effects.length === 2 && State.getCard("shared_dice").effects.length === 0);
+    check("衍生卡入库: 莉雅的硬币(建模)+闪耀偏方骰(T56 掷骰已建模)", !!State.getCard("shared_leya_coin") && !!State.getCard("shared_dice") && State.getCard("shared_leya_coin").effects.length === 2 && State.getCard("shared_dice").effects.length === 1 && State.getCard("shared_dice").effects[0].op === "dice");
 
     State.reset();
     State.newBattle();
@@ -2962,6 +2962,96 @@ function runAllTests() {
     b.allies[0].guku = 0;
     State.enlightenTurnEnd(b);
     check("T55 开关门控：「24」启灵3关闭→回合结束不加狂气", b.allies[0].guku === 0, "guku:" + b.allies[0].guku);
+    State.reset();
+  }
+
+  console.log("== 8.42 T56 占位机制卡主段建模（18 张）+ 闪耀偏方骰掷骰 ==");
+  {
+    check("T56 空占位卡 44→26（18 张主段建模+骰子掷骰）", DBF.cards.filter(c => (!c.effects || !c.effects.length) && c.type !== "灵知觉醒").length === 26,
+      "实际:" + DBF.cards.filter(c => (!c.effects || !c.effects.length) && c.type !== "灵知觉醒").length);
+
+    /* 高热区禁人：护盾防×20% + 临时反击 per=攻×32% */
+    State.reset(); State.newBattle();
+    State.addAlly("char_c07", 1); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    let b = State.battle;
+    const nor = b.allies[0];
+    nor.shield = 0;
+    const inst1 = Cards.inst("char_c07_s2", false);
+    b.piles.hand = [inst1]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+    Cards.play(inst1.uid);
+    const rip = Buffs.collect(nor, "riposteFlat").reduce((s2, m) => s2 + m.total, 0);
+    check("T56 高热区禁人：护盾=防×20%、临时反击=攻×32%",
+      nor.shield === Math.ceil((nor.defense || 0) * 0.20) && rip === Math.round((nor.attack || 0) * 0.32),
+      `盾:${nor.shield}（防${nor.defense}） 反击:${rip}（攻${nor.attack}）`);
+    State.reset();
+
+    /* 黑沼禁域：全体中毒=攻×48% 层 */
+    State.newBattle();
+    State.addAlly("char_c10", 1); State.addEnemy("enemy_dummy"); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    const lil = b.allies[0];
+    const inst2 = Cards.inst("char_c10_s2", false);
+    b.piles.hand = [inst2]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+    Cards.play(inst2.uid);
+    const poi = b.enemies.map(e => __buffsAll(e, "debuff_poison").reduce((s2, m) => s2 + m.stacks, 0));
+    check("T56 黑沼禁域：全体中毒=攻×48% 层", poi.every(p => p === Math.round((lil.attack || 0) * 0.48)), `层:${poi.join("/")} 攻:${lil.attack}`);
+    State.reset();
+
+    /* 应选之人：其他唤醒体+35 狂气 */
+    State.newBattle();
+    State.addAlly("char_o07", 1); State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    b = State.battle;
+    b.allies[0].guku = 0; b.allies[1].guku = 0;
+    const inst3 = Cards.inst("char_o07_s2", false);
+    b.piles.hand = [inst3]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+    Cards.play(inst3.uid);
+    check("T56 应选之人：其他唤醒体+35 狂气（自身不加）", b.allies[0].guku === 0 && b.allies[1].guku === 35, `自:${b.allies[0].guku} 他:${b.allies[1].guku}`);
+    State.reset();
+
+    /* 闪耀偏方骰：stub Math.random 掷骰三段（T56 调试教训：dice op 曾误插 describe 段致 UI 渲染死循环——已移至 resolve） */
+    if (true) {
+      State.newBattle();
+      State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      const bD = State.battle;
+      const dollD = bD.allies[0];
+      const origRandom = Math.random;
+      try {
+        Math.random = () => 0.5;
+        let sv0 = __buffsAll(dollD, "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+        const iA = Cards.inst("shared_dice", false);
+        bD.piles.hand.push(iA);
+        Cards.play(iA.uid);
+        let sv1 = __buffsAll(dollD, "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+        const weakAll = bD.enemies.every(e => e.hp <= 0 || __buffsAll(e, "debuff_weak").length);
+        check("T56 偏方骰 4 点：临时力量+44、虚弱易伤全体", sv1 - sv0 === 44 && weakAll, `力:${sv1 - sv0} 虚弱:${weakAll}`);
+        Math.random = () => 0.99;
+        bD.energy = 0;
+        sv0 = sv1;
+        const iB = Cards.inst("shared_dice", false);
+        bD.piles.hand.push(iB);
+        Cards.play(iB.uid);
+        sv1 = __buffsAll(dollD, "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+        check("T56 偏方骰 6 点：力量翻倍+132、算力+1", sv1 - sv0 === 132 && bD.energy === 1, `力:${sv1 - sv0} 算力:${bD.energy}`);
+      } finally { Math.random = origRandom; }
+      State.reset();
+    }
+
+    /* 装填！：空效果+保留 */
+    check("T56 装填！：retain 字段在（涡流装填词条未建模 notes）", (() => {
+      const c = DBF.cards.find(x => x.id === "char_o11_s2");
+      return c.retain === true && c.effects.length === 0 && /未建模/.test(c.notes);
+    })());
+    /* text 修错三张 */
+    check("T56 诺缇拉三张 text 修错（原转录脏）", (() => {
+      const t2 = DBF.cards.find(x => x.id === "char_c07_s2").text;
+      const t3 = DBF.cards.find(x => x.id === "char_c07_s3").text;
+      const tb = DBF.cards.find(x => x.id === "char_c07_burst").text;
+      return t2.includes("[防御力*20%]") && t3.includes("[防御力*8%]") && tb.includes("6 点临时反击");
+    })());
     State.reset();
   }
 

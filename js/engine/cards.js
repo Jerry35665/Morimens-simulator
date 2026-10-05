@@ -592,6 +592,22 @@ const Cards = {
         Log.add(`获得银钥能量 ${sv}${eff.chargePct != null ? `（银充${charge}×${eff.chargePct}%）` : ""}（当前 ${State.battle.silver}/1000）`, "sys");
         break;
       }
+      case "dice": {
+        /* T56 闪耀偏方骰：掷 6 面骰 → 临时力量=点数×11（6点翻倍+1算力）；≥4 虚弱易伤全体 1 回合 */
+        const roll = 1 + Math.floor(Math.random() * 6);
+        let sv = roll * 11;
+        if (roll >= 6) sv *= 2;
+        Buffs.add(source, "buff_strength", 1, 1, "闪耀偏方骰", sv);
+        Log.add(`🎲 偏方骰掷出 ${roll} 点 → 临时力量 +${sv}${roll >= 6 ? "（6点翻倍）+1 算力" : ""}`, "good");
+        if (roll >= 6) State.battle.energy += 1;
+        if (roll >= 4) {
+          for (const e of State.battle.enemies) if (e.hp > 0) {
+            Buffs.add(e, "debuff_weak", 1, null, "闪耀偏方骰");
+            Buffs.add(e, "debuff_vul", 1, null, "闪耀偏方骰");
+          }
+        }
+        break;
+      }
       case "energy": {
         /* 星辰篇·算力满盈（T48）：算力可超 10，>12 的超出部分自动转 300% 队伍平均银充的银钥 */
         if (State.starEnv) {
