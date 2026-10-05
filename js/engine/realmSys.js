@@ -146,8 +146,9 @@ const RealmSys = {
       const pw = Math.ceil(b.team.maxHp * (0.02 + 0.00005 * this.mastery() * masteryMul) * boost);
       for (const a of b.allies) {
         if (typeof Damage !== "undefined") Damage.addShield(a, sh); else a.shield += sh;
-        Buffs.add(a, "buff_strength", 1, null, "胚胎吞噬", pw);
       }
+      /* T52：力量 shared 挂队伍一份——旧代码循环内 add，N 人队叠 N 层=4 倍力量，挪出循环单次 */
+      if (b.allies[0]) Buffs.add(b.allies[0], "buff_strength", 1, null, "胚胎吞噬", pw);
       Log.add(`🧬 胚胎吞噬：全体护盾 +${sh}、临时力量 +${pw}（生命越低效果越高${pure ? "，至纯精通翻倍" : ""}）`, "good");
     }
   },

@@ -191,8 +191,13 @@ const Yogens = {
           break;
 
         case "str": {
-          for (const a of b.allies) Buffs.add(a, "buff_strength", 1, e.temp ? 1 : null, name + (e.tag ? `（${e.tag}）` : ""), v);
-          Log.add(`💫 全体唤醒体力量 ${e.tag ? `（${e.tag}）` : ""}+${v}${e.temp ? "（临时，回合末消失）" : ""}`, "good");
+          /* T52（AI 会话 10-06 实测缺陷）：力量是 shared 挂队伍一份实例——旧代码循环全队各 add
+           * 一次，4 人队每次施放合并叠 4 层=4 倍力量（实测 40 次「咆哮的血与沙」力=4320=27×40×4）。
+           * 修：只 add 一次。pick 钥令（咆哮「选择1名唤醒体…获得21点力量」）力量归选中者——
+           * 力量共享槽下全队受益，与真实游戏「力量图标挂血条下」一致；无 pick 全体语义同样一份 */
+          const t = this._pickAlly(ch);
+          Buffs.add(t || b.allies[0], "buff_strength", 1, e.temp ? 1 : null, name + (e.tag ? `（${e.tag}）` : ""), v);
+          Log.add(`💫 ${e.pick && t ? t.def.name : "全体唤醒体"} 力量 ${e.tag ? `（${e.tag}）` : ""}+${v}${e.temp ? "（临时，回合末消失）" : ""}${e.pick ? "（力量全队共享，挂血条下）" : ""}`, "good");
           break;
         }
 
@@ -390,7 +395,8 @@ const Yogens = {
           const total = b.allies.reduce((s, a) => s + a.shield, 0);
           const sv = Math.ceil(total * (e.pct || 10) / 100);
           if (sv > 0) {
-            for (const a of b.allies) Buffs.add(a, "buff_strength", 1, 1, name, sv);
+            /* T52：同 str op——力量 shared 挂队伍一份，循环全队 add 会 N 人队=N 倍 */
+            Buffs.add(b.allies[0], "buff_strength", 1, 1, name, sv);
             Log.add(`💫 按当前护盾合计 ${total} 的 ${e.pct || 10}% → 全体临时力量 +${sv}`, "good");
           }
           break;

@@ -2533,6 +2533,89 @@ function runAllTests() {
     State.reset();
   }
 
+  console.log("== 8.38 T52 钥令 str op 口径修复（AI 会话 10-06 实测缺陷：全体循环×共享槽=N 倍力量）==");
+  {
+    State.reset();
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addAlly("char_ogilvy", 1);
+    State.addEnemy("enemy_dummy");
+    State.setCarriedYogen("yg_inject_guard");
+    Turn.startBattle();
+    const b = State.battle;
+    const doll = b.allies[0], og = b.allies[1];
+    const castNew = (id, ch) => { b.silver = 1000; b.yogenCastsThisTurn = 1; return Yogens.cast(id, { via: "forgotten", choice: ch }); };
+    const allowReplay = () => { b.usedYogens = []; State.usedYogensExplore = []; };   // 绕过「每钥令每探索1次」以便连续施放
+    const strSlots = () => __buffsAll(doll, "buff_strength");
+    const strTotal = () => strSlots().reduce((s, x) => s + (x.per || 0) * x.stacks, 0);
+    const v21 = Math.ceil((State.depths.physical || 0) * 2 / 100);   // 咆哮 str p:2 → ceil(1032×2%)=21
+
+    /* 单施：共享槽只叠 1 层（旧缺陷 2 人队=2 层、4 人队=4 层） */
+    allowReplay();
+    castNew("yg_roar_blood_sand", { allyUid: doll.uid });
+    check("T52 咆哮单施力=" + v21 + "（共享槽 1 层，非 N 人=N 层）",
+      strTotal() === v21 && strSlots().length === 1 && strSlots()[0].stacks === 1 && strSlots()[0].per === v21,
+      "total:" + strTotal() + " slots:" + JSON.stringify(strSlots().map(x => ({ per: x.per, s: x.stacks }))));
+
+    /* 4 次施放=4 倍深度值（AI 会话实测缺陷场景：40 次=4320=27×40×4，修复后应为 27×40） */
+    for (let i = 0; i < 3; i++) { allowReplay(); castNew("yg_roar_blood_sand", { allyUid: doll.uid }); }
+    check("T52 咆哮 4 次施放=" + (4 * v21) + "（非 " + (16 * v21) + "）",
+      strTotal() === 4 * v21 && strSlots()[0].stacks === 4,
+      "total:" + strTotal() + " stacks:" + strSlots()[0].stacks);
+
+    /* 与 7f2e778 分槽机制并存：咆哮永久力量 + 临时力量 两实例独立 */
+    __clearBuffs(doll);
+    allowReplay();
+    castNew("yg_roar_blood_sand", { allyUid: doll.uid });              // 永久 per=21 d=null
+    Buffs.add(og, "buff_strength", 1, 1, "临时来源", 11);               // 临时 per=11 d=1（经任一 ally 挂队伍）
+    const slots2 = strSlots();
+    check("T52 与分槽并存：永久(21)+临时(11) 两实例、collect 求和=" + (v21 + 11),
+      slots2.length === 2 && slots2.some(x => x.per === v21 && x.duration == null) && slots2.some(x => x.per === 11 && x.duration === 1)
+        && strTotal() === v21 + 11,
+      "slots:" + JSON.stringify(slots2.map(x => ({ per: x.per, d: x.duration, s: x.stacks }))));
+    /* 回合末：临时清、永久保持（分槽 tick 语义不受 T52 影响） */
+    Buffs.tickTurnEnd(b.team);
+    check("T52 分槽 tick：回合末临时消失、咆哮永久原样",
+      strSlots().length === 1 && strSlots()[0].per === v21 && strSlots()[0].stacks === 1,
+      "剩:" + JSON.stringify(strSlots().map(x => ({ per: x.per, s: x.stacks }))));
+
+    /* strFromShield（美梦一刹）同款修复：护盾合计 10% 只挂一份 */
+    __clearBuffs(doll);
+    doll.shield = 100; og.shield = 50;
+    const shieldBefore = b.allies.reduce((s, a) => s + a.shield, 0);
+    allowReplay();
+    castNew("yg_dream_moment");
+    const svExp = Math.ceil((shieldBefore + 2 * Math.ceil((State.depths.physical || 0) * 15 / 100)) * 10 / 100);
+    check("T52 美梦一刹 strFromShield 力量=" + svExp + "（1 层，非 2 倍）",
+      strTotal() === svExp && strSlots().filter(x => x.duration === 1).length === 1,
+      "total:" + strTotal() + " slots:" + JSON.stringify(strSlots().map(x => ({ per: x.per, s: x.stacks }))));
+
+    /* 无 pick 全体语义保持：灰雾真容 str 无 pick → 照常一份（不回归） */
+    __clearBuffs(doll);
+    allowReplay();
+    castNew("yg_gray_trueface");
+    check("T52 无 pick 全体语义保持：灰雾真容力量=" + Math.ceil((State.depths.physical || 0) * 1.5 / 100) + " 一份",
+      strTotal() === Math.ceil((State.depths.physical || 0) * 1.5 / 100) && strSlots().length === 1,
+      "total:" + strTotal());
+
+    State.reset();
+
+    /* 胚胎吞噬（realmSys onBurst）同款缺陷修复：2 人队力量不翻倍 */
+    State.newBattle();
+    State.addAlly("char_helot_catena", 1);   // 血肉
+    State.addAlly("char_doll", 1);           // 混沌 → 非至纯， masteryMul=1
+    State.addEnemy("enemy_dummy");
+    Turn.startBattle();
+    const b2 = State.battle;
+    b2.piles.hand.push(Cards.inst("shared_embryo", false));
+    RealmSys.onBurst(b2.allies[0]);
+    const embInst = (b2.team.buffs || []).find(x => x.defId === "buff_strength");
+    check("T52 胚胎吞噬：2 人队力量槽 1 层（非 2 倍）",
+      embInst && embInst.stacks === 1,
+      "slots:" + JSON.stringify((b2.team.buffs || []).map(x => ({ per: x.per, s: x.stacks }))));
+    State.reset();
+  }
+
   renderSummary();
 }
 

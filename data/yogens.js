@@ -65,7 +65,7 @@ window.DBF.yogens = [
     effect: "选择1名唤醒体使其获得20点狂气，获得21点力量，若当前界域为「血肉」，额外使胚胎融合+20，但失去10%当前生命。",
     eff: [
       { op: "guku", v: 20, pick: true },
-      { op: "str", p: 2 },
+      { op: "str", p: 2, pick: true },
       { op: "note", text: "界域「血肉」：胚胎融合+20、失去10%当前生命（未结算）" }
     ] },
 
