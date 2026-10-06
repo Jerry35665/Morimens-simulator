@@ -14,6 +14,7 @@ for (let i = 0; i < localStorage.length; i++) {
   const k = localStorage.key(i);
   if (k && k.startsWith("morimens_")) __userBackup[k] = localStorage.getItem(k);
 }
+document.title = "RJ:1";
 function __restoreUserData() {
   localStorage.clear();
   for (const [k, v] of Object.entries(__userBackup)) localStorage.setItem(k, v);
@@ -49,6 +50,7 @@ function __clearBuffs(unit) {
 }
 
 function runAllTests() {
+  document.title = "RJ:2";
   localStorage.clear();   // 测试期间清空（真实数据已在 __userBackup，结束后恢复）
   State.keeperLv = 1;
   console.log("== 1. 数据完整性 ==");
@@ -2359,6 +2361,7 @@ function runAllTests() {
 
   console.log("== 8.365 旧日余烬「每回合重置」（2026-10-06 实装）==");
   {
+    State.forceCrit = false;   // 本节禁暴击：5% roll 会让「打30」变 47 破坏期望链（已两次咬人，2026-10-06 定案）
     DBF.relicDeck = [];
     State.reset();
     State.newBattle();
@@ -2398,6 +2401,7 @@ function runAllTests() {
     Turn.endTurn();
     check("余烬: 无基准怪不重置(100 保持)", emberOf(dm) && emberOf(dm).stacks === 100,
       "层:" + (emberOf(dm) || {}).stacks);
+    State.forceCrit = null;
     State.reset();
   }
 
