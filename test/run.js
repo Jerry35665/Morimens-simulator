@@ -3400,6 +3400,34 @@ function runAllTests() {
       check("T59 泰旖丝超限：次回合开始置入胚胎（圣洁之子未入库近似）", b.piles.hand.some(i => i.defId === "shared_embryo"), "手:" + b.piles.hand.map(i => Cards.def(i).name).join(","));
       State.reset();
     }
+    /* T59 补：启灵 希洛3 基础打击暴伤+10 / 克珀珊特1 基础卡狂气+5 */
+    {
+      State.reset(); State.newBattle();
+      State.addAlly("char_b05", 1); State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      let b = State.battle;
+      const he = b.allies[0];
+      const sd = DBF.cards.find(c => c.owner === "char_b05" && c.name === "基础打击") || DBF.cards.find(c => c.name === "基础打击" && c.owner === "char_helot_catena");   // 希洛无基础打击定义则借用同名卡验证 onPlayCritDmg
+      const ii = Cards.inst(sd.id, false);
+      b.piles.hand = [ii]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+      Cards.play(ii.uid);
+      const cd = Buffs.collect(he, "critDmgFlat").reduce((s2, m) => s2 + (m.name === "临时暴击伤害" ? m.total : 0), 0);
+      check("T59 启灵希洛3：打出基础打击暴伤+10", cd >= 10, "暴伤:" + cd);
+      State.reset();
+    }
+    {
+      State.reset(); State.newBattle();
+      const kp = State.addAlly("char_o10", 1); State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      let b = State.battle;
+      kp.guku = 0; kp.enlightenOn = [true, false, true];
+      const sd2 = DBF.cards.find(c => c.owner === "char_o10" && (c.name === "基础打击" || /打击/.test(c.name || ""))) || DBF.cards.find(c => c.name === "基础打击" && c.owner === "char_helot_catena");   // 克珀珊特基础打击未录入则借用
+      const ii2 = Cards.inst(sd2.id, false);
+      b.piles.hand = [ii2]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+      Cards.play(ii2.uid);
+      check("T59 启灵克珀珊特1：基础打击狂气+5", kp.guku >= 5, "guku:" + kp.guku);
+      State.reset();
+    }
     /* 快照回溯带 od 字段 */
     {
       State.reset(); State.newBattle();

@@ -189,7 +189,9 @@ const State = {
     char_d12:  [ { lv: 1, cards: ["基础打击", "基础防御"], onPlayStrPct: 15, note: "乐音翻倍条件未建模" } ],
     char_tulu: [ { lv: 2, cards: ["基础打击", "基础防御"], onPlayStrPct: 6, note: "临时触腕伤害段未建模（随卡级12%）" } ],
     char_b01:  [ { lv: 3, cards: ["基础打击", "基础防御"], onPlayStrPct: 3 } ],
-    char_b05:  [ { lv: 2, cards: ["基础防御"], onPlayCrit: 25 } ],
+    char_b05:  [ { lv: 2, cards: ["基础防御"], onPlayCrit: 25 },
+                 { lv: 3, cards: ["基础打击"], onPlayCritDmg: 10 } ],
+    char_o10:  [ { lv: 1, cards: ["基础打击", "基础防御"], guku: 5, note: "「余波：下次打出狂气+5（叠2）」未建模" } ],
   },
 
   /* T55 启灵回合结束触发（消费点 turn.js endTurn，enlightenOn 门控） */
