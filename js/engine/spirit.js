@@ -76,6 +76,12 @@ const Spirit = {
         if (em.dmgPct) groups.basePlain.pct += em.dmgPct;
       }
     }
+    /* T59 超限持续卡牌修正：萝坦/达芙黛尔本场指定卡基础伤害+50% 等 → basePlain 组 */
+    if (typeof State.battleCardMods === "function") {
+      for (const om of State.battleCardMods(source, name)) {
+        if (om.dmgPct) groups.basePlain.pct += om.dmgPct;
+      }
+    }
   },
 
   /* ---- ⑥.5 最终伤害区追加（莉莉：「打击」最终伤害提高，首领战翻倍） ---- */

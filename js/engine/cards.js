@@ -234,6 +234,19 @@ const Cards = {
     }
     /* 固有天赋（T40）：打出卡触发（attrCardCritOnPlay 族——艾瑞卡/汀克特） */
     if (typeof State.talentOnPlay === "function") State.talentOnPlay(owner, card);
+    /* T59 超限持续：odPlays（卡茜亚「之后10次打出指令卡获攻4%力量」）——打出计数消费 */
+    if (b.odPlays && b.odPlays.length) {
+      for (const op of b.odPlays) {
+        if (op.left > 0 && (!op.ownerName || owner.def.name === op.ownerName)) {
+          op.left -= 1;
+          const sv = Math.ceil((owner.attack || 0) * op.strPct / 100);
+          if (sv > 0) Buffs.add(owner, "buff_strength", 1, null, `超限·${owner.def.name}`, sv);
+          Log.add(`⚡ 超限持续：${owner.def.name} 打出「${card.name}」获攻${op.strPct}%力量 +${sv}（剩 ${op.left} 次）`, "good");
+          break;
+        }
+      }
+      b.odPlays = b.odPlays.filter(op => op.left > 0);
+    }
     /* T55 启灵打出触发：onPlayCrit/CritDmg（临时暴击率/暴伤%）、onPlayStrPct（攻X%临时力量）、
      * onPlayTentaclePct（攻X%临时触腕伤害）——enlightenOn 门控 */
     if (typeof State.enlightenMods === "function") {
@@ -478,6 +491,12 @@ const Cards = {
         const times = eff.timesXSpend ? (State.battle.xSpend || 0) + 1 : (eff.times || 1);
         let v = eff.value != null ? eff.value + (eff.perLv || 0) * ((source.cardLv || 1) - 1)
           : Math.ceil(Math.round((source.defense || 0) * ((eff.scaleDefense || 0) + (eff.scalePerLv || 0) * ((source.cardLv || 1) - 1)) * 1e6) / 1e6);
+        /* T59 超限持续卡牌修正：该卡护盾提高X%（艾瑞卡超限·电磁爆破） */
+        if (typeof State.battleCardMods === "function") {
+          for (const om of State.battleCardMods(source, card.name)) {
+            if (om.blockPct) v = Math.round(v * (1 + om.blockPct / 100));
+          }
+        }
         /* T55 启灵卡牌修正：该卡护盾提高X%/+N 点 */
         if (typeof State.enlightenMods === "function") {
           for (const em of State.enlightenMods(source, card.name)) {
@@ -717,6 +736,46 @@ const Cards = {
     /* T57 超限爆发逐角色（docs/OVERDRIVE.md）：gukuMax=200 攒满释放触发专属效果——立即生效子集 */
     if (isOverdrive && State.OVERDRIVE_HOOKS && State.OVERDRIVE_HOOKS[ally.def.id] && typeof State.OVERDRIVE_HOOKS[ally.def.id].run === "function") {
       try { State.OVERDRIVE_HOOKS[ally.def.id].run(ally, b); } catch (e) { Log.add(`⚠ 超限效果异常: ${e.message}`, "sys"); }
+    }
+    /* T59 超限持续效果（「持续N回合」族）：b.odList/odCardMods/odPlays/odShieldPct，startTurn/play 消费 */
+    if (isOverdrive) {
+      const oid = ally.def.id;
+      if (oid === "char_doll") {   // 接下来3回合每回合开始回20%体质生命+全体10狂气
+        (b.odList = b.odList || []).push({ ownerName: "朵尔", untilTurn: b.turn + 3, healPctCon: 20, gukuAll: 10 });
+        Log.add(`⚡ 超限【朵尔】：接下来 3 回合，每回合开始回复 20% 体质生命+全体狂气 +10`, "good");
+      } else if (oid === "char_o03") {   // 法洛思：3回合每回合开始抽2张（手牌上限+2 未建模）
+        (b.odList = b.odList || []).push({ ownerName: "法洛思", untilTurn: b.turn + 3, drawN: 2, handUp: true });
+        Log.add(`⚡ 超限【法洛思】：接下来 3 回合，每回合开始抽 2 张（手牌上限+2 未建模）`, "good");
+      } else if (oid === "char_b01") {   // 泰旖丝：3回合每回合开始胚胎转化（圣洁之子未入库→按置入胚胎近似）
+        (b.odList = b.odList || []).push({ ownerName: "泰旖丝", untilTurn: b.turn + 3, embryo: true });
+        Log.add(`⚡ 超限【泰旖丝】：接下来 3 回合，每回合开始胚胎转化（圣洁之子未入库，按置入胚胎近似）`, "good");
+      } else if (oid === "char_d05") {   // 温柯尔：3回合每回合开始选择的唤醒体+35狂气（无选择参数→allies[0]近似）
+        const t0 = b.allies[0];
+        (b.odList = b.odList || []).push({ ownerName: t0 ? t0.def.name : null, untilTurn: b.turn + 3, gukuSelf: 35 });
+        Log.add(`⚡ 超限【温柯尔】：接下来 3 回合，${t0 ? t0.def.name : "目标"} 每回合开始狂气 +35（「选择」参数未建模，默认第一位）`, "good");
+      } else if (oid === "char_rotan") {   // 萝坦：本场「混沌之兽」与「打击」基础伤害+50%（久远的孤寂段未建模）
+        (b.odCardMods = b.odCardMods || []).push({ owner: oid, cards: ["混沌之兽", "打击", "基础打击"], dmgPct: 50, untilTurn: 9999 });
+        Log.add(`⚡ 超限【萝坦】：本场战斗「混沌之兽」与「打击」基础伤害 +50%（「久远的孤寂」段未建模）`, "good");
+      } else if (oid === "char_d08") {   // 艾瑞卡：3回合「电磁爆破」伤害护盾+50%（打击/防御次数段未建模）
+        (b.odCardMods = b.odCardMods || []).push({ owner: oid, cards: ["电磁爆破"], dmgPct: 50, blockPct: 50, untilTurn: b.turn + 3 });
+        Log.add(`⚡ 超限【艾瑞卡】：3 回合内「电磁爆破」伤害/护盾 +50%（打击/防御次数段未建模）`, "good");
+      } else if (oid === "char_dafdel") {   // 达芙黛尔：本场「断颈一击」基础伤害+50%（千面幻象段未建模）
+        (b.odCardMods = b.odCardMods || []).push({ owner: oid, cards: ["断颈一击"], dmgPct: 50, untilTurn: 9999 });
+        Log.add(`⚡ 超限【达芙黛尔】「幻雾迷烟」：本场战斗「断颈一击」基础伤害 +50%（千面幻象段未建模）`, "good");
+      } else if (oid === "char_kasia") {   // 卡茜亚：之后10次打出指令卡获攻4%力量（爆发次数翻倍段未建模）
+        (b.odPlays = b.odPlays || []).push({ ownerName: "卡茜亚", left: 10, strPct: 4 });
+        Log.add(`⚡ 超限【卡茜亚】「纵情欢笑」：之后 10 次打出指令卡获攻 4% 力量（爆发次数翻倍段未建模）`, "good");
+      } else if (oid === "char_ogilvy") {   // 奥吉尔：获得的护盾提高200%（伤害次数+2 未建模）
+        (b.odShieldPct = b.odShieldPct || []).push({ uid: ally.uid, pct: 200, untilTurn: b.turn + 1 });
+        Log.add(`⚡ 超限【奥吉尔】：护盾获得量 +200%（至下回合开始；伤害次数+2 未建模）`, "good");
+      } else if (oid === "char_o05") {   // 奥瑞塔：「腺体分裂」补满手牌（伤害加成变力量 未建模）
+        const gs = DBF.cards.find(c => c.id === "char_o05_s1");
+        if (gs) {
+          let n = 0;
+          while (b.piles.hand.length < Cards.HAND_LIMIT) { b.piles.hand.push(Cards.inst(gs.id, false)); n++; }
+          Log.add(`⚡ 超限【奥瑞塔】：「腺体分裂」×${n} 补满手牌（伤害加成变力量段未建模）`, "good");
+        }
+      }
     }
     /* 星辰篇·狂气调和（T48）：每次释放狂气爆发后基础狂气 +10；记录本回合已爆发（回合末未爆发者转银钥）。
      * 「狂气百分比提高效果减半」未建模——引擎现无「狂气获取提高X%」类词条，登记 DATA-TODO */

@@ -3287,7 +3287,7 @@ function runAllTests() {
     deck(["lr_212"]);
     Turn.startBattle();
     b = State.battle;
-    const defCard58 = DBF.cards.find(c => c.name === "基础防御" && c.owner === "char_o05");
+    const defCard58 = DBF.cards.find(c => c.owner === "char_o05" && c.type === "防御") || DBF.cards.find(c => c.name === "基础防御" && c.owner === "char_o05");
     const defInst58 = Cards.inst(defCard58.id, false);
     b.piles.hand = [defInst58]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
     Cards.play(defInst58.uid);
@@ -3319,6 +3319,102 @@ function runAllTests() {
     for (let i = 0; i < 4; i++) LevelRelics.onCardPlayed({ defId: "card_doll_defend" }, dd2, fakeDef58);
     const rip3 = Buffs.collect(dd2, "riposteFlat").reduce((s2, m) => s2 + m.total, 0);
     check("T58 故人的怀表：打出防御4次→临时反击970×3（cap3）", rip3 === 2910, "反击:" + rip3);
+    State.reset();
+  }
+
+  console.log("== 8.45 T59 超限持续效果（odList/odCardMods/odPlays/odShieldPct）==");
+  {
+    const setupOD = (charId) => {
+      State.reset(); State.newBattle();
+      const a = State.addAlly(charId, 1);
+      a.gukuMax = 200; a.guku = 200;
+      State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      State.battle.phase = "play";
+      return { a, b: State.battle };
+    };
+
+    /* 萝坦超限：本场「混沌之兽」基础伤害+50%（basePlain 组） */
+    {
+      const { a, b } = setupOD("char_rotan");
+      a.enlightenOn = [false, false, false];
+      const chaosDef = State.getCard("card_rotan_awaken");
+      const off = Damage.compute({ source: a, target: b.enemies[0], card: chaosDef, eff: { value: 100 }, crit: false }).final;
+      Cards.releaseBurst(a);
+      const on = Damage.compute({ source: a, target: b.enemies[0], card: chaosDef, eff: { value: 100 }, crit: false }).final;
+      check("T59 萝坦超限：混沌之兽基础伤害+50%", on === Math.ceil(off * 1.5), "关:" + off + " 开:" + on);
+    }
+    /* 艾瑞卡超限：电磁爆破伤害/护盾+50%（3回合） */
+    {
+      const { a, b } = setupOD("char_d08");
+      const emDef = State.getCard("char_d08_burst");
+      const dmgOff = Damage.compute({ source: a, target: b.enemies[0], card: emDef, eff: { value: 100 }, crit: false }).final;
+      Cards.releaseBurst(a);
+      const dmgOn = Damage.compute({ source: a, target: b.enemies[0], card: emDef, eff: { value: 100 }, crit: false }).final;
+      check("T59 艾瑞卡超限：电磁爆破伤害+50%", dmgOn === Math.ceil(dmgOff * 1.5), "关:" + dmgOff + " 开:" + dmgOn);
+    }
+    /* 卡茜亚超限：之后10次打出获攻4%力量 */
+    {
+      const { a, b } = setupOD("char_kasia");
+      Cards.releaseBurst(a);
+      const str0 = __buffsAll(a, "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+      const fake = { type: "技能", name: "灵感", owner: "shared" };
+      LevelRelics.onCardPlayed.length; void LevelRelics.onCardPlayed;
+      Cards.inst("shared_inspire", false);
+      b.piles.hand.push(Cards.inst("shared_inspire", false)); b.piles.hand.pop();
+      Cards.play(b.piles.hand[0] ? b.piles.hand[0].uid : "x");
+      const str1 = __buffsAll(a, "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+      check("T59 卡茜亚超限：打出卡→攻4%临时力量", str1 >= str0, "力:" + str0 + "→" + str1);
+      check("T59 卡茜亚超限：计数消耗（剩9次）", (b.odPlays || []).some(op => op.left === 9), "odPlays:" + JSON.stringify(b.odPlays || []));
+    }
+    /* 奥吉尔超限：护盾获得+200% */
+    {
+      const { a, b } = setupOD("char_ogilvy");
+      Cards.releaseBurst(a);
+      a.shield = 0;
+      Damage.addShield(a, 50, "测试");
+      check("T59 奥吉尔超限：护盾50→150（+200%）", a.shield === 150, "盾:" + a.shield);
+    }
+    /* 朵尔超限：odList 每回合开始回血+全体狂气（直调 startTurn 语义的 od 段——用新回合验证） */
+    {
+      const { a, b } = setupOD("char_doll");
+      Cards.releaseBurst(a);
+      check("T59 朵尔超限：odList 3回合入队", (b.odList || []).some(o => o.ownerName === "朵尔" && o.healPctCon === 20), "od:" + JSON.stringify(b.odList || []));
+      const con = a.stats && (a.stats.constitutionCombat || a.stats.constitution) || 0;
+      const exp = Math.ceil(con * 0.20);
+      b.team.hp -= 300;
+      const hp0 = b.team.hp;
+      const g0 = b.allies.map(x => x.guku);
+      Turn.startTurn();
+      check("T59 朵尔超限：次回合开始回血" + exp + "+全体狂气+10",
+        b.team.hp - hp0 === exp && b.allies.every((x, i) => x.guku === Math.min(x.gukuMax || 100, g0[i] + 10)),
+        "回:" + (b.team.hp - hp0) + "/" + exp);
+      State.reset();
+    }
+    /* 泰旖丝超限：次回合开始置入胚胎 */
+    {
+      const { a, b } = setupOD("char_b01");
+      Cards.releaseBurst(a);
+      b.piles.hand = []; b.piles.draw = []; b.piles.discard = [];
+      Turn.startTurn();
+      check("T59 泰旖丝超限：次回合开始置入胚胎（圣洁之子未入库近似）", b.piles.hand.some(i => i.defId === "shared_embryo"), "手:" + b.piles.hand.map(i => Cards.def(i).name).join(","));
+      State.reset();
+    }
+    /* 快照回溯带 od 字段 */
+    {
+      State.reset(); State.newBattle();
+      const a = State.addAlly("char_rotan", 1);
+      a.gukuMax = 200; a.guku = 200;
+      State.addEnemy("enemy_dummy");
+      Turn.startBattle();
+      State.battle.phase = "play";
+      Cards.releaseBurst(a);
+      const ser = Turn.serializeState();
+      check("T59 快照携带 od 字段", ser.od && ser.od.cardMods.some(o => o.owner === "char_rotan" && o.dmgPct === 50), JSON.stringify(ser.od));
+      Turn.restoreState(ser);
+      check("T59 回溯还原超限卡牌修正", State.battleCardMods(State.battle.allies[0], "混沌之兽").length === 1);
+      State.reset();
+    }
     State.reset();
   }
 

@@ -91,6 +91,31 @@ const Turn = {
     }
     /* 关卡造物回合开始效果（T50）：定向罗盘抽牌/日月轮盘奇偶/守护之手低血盾（快照前，随回溯一致） */
     if (typeof LevelRelics !== "undefined") LevelRelics.onTurnStart();
+    /* T59 超限持续效果：b.odList（朵尔回血/法洛思抽牌/泰旖丝胚胎/温柯尔狂气），过期清理 */
+    if (b.odList && b.odList.length) {
+      b.odList = b.odList.filter(o => o.untilTurn >= b.turn);
+      for (const o of b.odList) {
+        const who = o.ownerName ? b.allies.find(a => a.def.name === o.ownerName) : null;
+        if (o.healPctCon && who) {
+          const con = who.stats && (who.stats.constitutionCombat || who.stats.constitution) || 0;
+          const hv = Math.ceil(con * o.healPctCon / 100);
+          if (hv > 0) Damage.heal(who, hv, `超限·${o.ownerName}（体质${o.healPctCon}%）`);
+        }
+        if (o.gukuAll) {
+          for (const a of b.allies) a.guku = Math.min(a.gukuMax || 100, a.guku + o.gukuAll);
+          Log.add(`⚡ 超限持续：全体狂气 +${o.gukuAll}`, "good");
+        }
+        if (o.drawN) { Cards.draw(o.drawN); Log.add(`⚡ 超限持续：抽 ${o.drawN} 张${o.handUp ? "（手牌上限+2 未建模，引擎为全局常量）" : ""}`, "good"); }
+        if (o.embryo && b.piles.hand.length < Cards.HAND_LIMIT) {
+          b.piles.hand.push(Cards.inst("shared_embryo", false));
+          Log.add(`⚡ 超限持续（泰旖丝）：置入 1 张「胚胎」（「圣洁之子」转化未建模——卡未入库，按无胚胎分支近似）`, "good");
+        }
+        if (o.gukuSelf && who) {
+          who.guku = Math.min(who.gukuMax || 100, who.guku + o.gukuSelf);
+          Log.add(`⚡ 超限持续：${who.def.name} 狂气 +${o.gukuSelf}（${who.guku}/${who.gukuMax}）`, "good");
+        }
+      }
+    }
     this.snapshotTurn();   // 记录回合开始状态与手牌（供回溯）
     State.notify();
   },
@@ -116,6 +141,12 @@ const Turn = {
       },
       team: b.team, teamStats: b.teamStats, aiIndex: b.aiIndex,
       relicState: b.relicState ? JSON.parse(JSON.stringify(b.relicState)) : null,   // T53 造物冷却/每回合计数随快照回溯
+      od: {   // T59 超限持续效果随快照回溯
+        list: JSON.parse(JSON.stringify(b.odList || [])),
+        cardMods: JSON.parse(JSON.stringify(b.odCardMods || [])),
+        plays: JSON.parse(JSON.stringify(b.odPlays || [])),
+        shieldPct: JSON.parse(JSON.stringify(b.odShieldPct || []))
+      },
       playedCount: b.playedCount || 0,   // T34 条件边：本战斗我方累计打牌数（「出牌>=N」条件用）
       firstCardPlayed: b.firstCardPlayed === true,
       fleshFusion: b.fleshFusion || 0,
@@ -161,6 +192,12 @@ const Turn = {
     b.teamStats = JSON.parse(JSON.stringify(s.teamStats));
     b.aiIndex = JSON.parse(JSON.stringify(s.aiIndex));
     b.relicState = s.relicState ? JSON.parse(JSON.stringify(s.relicState)) : { cool: {}, cnt: {} };   // T53 造物运行时状态还原
+    if (s.od) {   // T59 超限持续还原
+      b.odList = s.od.list || [];
+      b.odCardMods = s.od.cardMods || [];
+      b.odPlays = s.od.plays || [];
+      b.odShieldPct = s.od.shieldPct || [];
+    }
     b.playedCount = s.playedCount || 0;   // T34：打牌计数随快照还原（预览/回溯不虚增）
     b.firstCardPlayed = s.firstCardPlayed === true;   // 首卡标记随快照还原（T8）
     b.fleshFusion = s.fleshFusion || 0;

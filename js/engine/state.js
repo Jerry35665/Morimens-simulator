@@ -267,6 +267,15 @@ const State = {
     return arr.filter(e => e.cards && e.cards.includes(cardName) && on[e.lv - 1] === true);
   },
 
+  /* T59 超限持续卡牌修正（b.odCardMods，cards/releaseBurst 写入）：
+   * 返回该单位该卡当前生效的超限条目（dmgPct/blockPct），untilTurn=Infinity 表本场 */
+  battleCardMods(unit, cardName) {
+    const b = this.battle;
+    if (!b || !b.odCardMods || !unit || !unit.def || !cardName) return [];
+    return b.odCardMods.filter(o => o.owner === unit.def.id
+      && o.cards && o.cards.includes(cardName) && o.untilTurn >= b.turn);
+  },
+
   /* T55 启灵回合结束触发（turn.js endTurn 调用；测试可直调） */
   enlightenTurnEnd(b) {
     if (!b || !this.ENLIGHTEN_TURN_END) return;

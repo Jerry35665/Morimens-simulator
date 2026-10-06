@@ -292,6 +292,15 @@ const Damage = {
    * 超维回合 -25%（维度跃迁：护盾减 25%）同在此结算 */
   addShield(unit, v, label = "") {
     let f = 1;
+    /* T59 奥吉尔超限：获得的护盾提高200%（b.odShieldPct，按释放回合内生效） */
+    if (unit && unit.side === "ally" && typeof State !== "undefined") {
+      const b = State.battle;
+      if (b && b.odShieldPct && b.odShieldPct.length) {
+        for (const os of b.odShieldPct) {
+          if (os.uid === unit.uid && b.turn <= os.untilTurn) { f *= 1 + os.pct / 100; }
+        }
+      }
+    }
     if (typeof RealmSys !== "undefined" && State.battle && State.battle.hyperTurnActive) f *= RealmSys.hyperDamageMul();
     if (typeof Wheels !== "undefined" && unit.side === "ally" && unit.fatewheels) {
       const bp = Wheels.combatMods(unit).blockPct;
