@@ -259,7 +259,10 @@ const Turn = {
 
   _discardOne(uid) {
     const c = Cards._move(uid, "discard");
-    if (c) Log.add(`弃置 <b>${Cards.def(c).name}</b>`, "sys");
+    if (c) {
+      Log.add(`弃置 <b>${Cards.def(c).name}</b>`, "sys");
+      if (typeof LevelRelics !== "undefined") LevelRelics.onDiscard();   // T58：每弃 1 张（寂静序曲/维度影像·希洛）
+    }
   },
   /* 回合结束弃手牌：def.retain 的卡保留在手（词条 2026-09-22）；inst.retainInst=星辰篇银钥觉醒
    * 置入的灵知觉醒牌获「保留」（T48，本场战斗有效的实例级标记） */

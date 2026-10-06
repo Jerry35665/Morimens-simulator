@@ -2623,7 +2623,7 @@ function runAllTests() {
     const deck = (ids) => { State.levelRelicDeck = ids.slice(); };
     const strOf = (u) => __buffsAll(u, "buff_strength").reduce((s, x) => s + (x.per || 0) * x.stacks, 0);
 
-    check("T53 已建模造物=158 条", DBF.levelRelics.filter(r => r.mods && Object.keys(r.mods).length > 0).length === 158,
+    check("T53+T58 已建模造物=167 条", DBF.levelRelics.filter(r => r.mods && Object.keys(r.mods).length > 0).length === 167,
       "实际:" + DBF.levelRelics.filter(r => r.mods && Object.keys(r.mods).length > 0).length);
 
     /* 维度影像族第一子句：回合开始 ownerName 定向 +15 狂气 */
@@ -3128,6 +3128,197 @@ function runAllTests() {
       const vul = b.enemies.map(e => __buffsAll(e, "debuff_vul").reduce((s2, m) => s2 + m.stacks, 0)).reduce((x, y) => x + y, 0);
       check("T57 对照：普通爆发（<200）不触发超限效果", vul === 0, `易伤层:${vul}`);
     }
+    State.reset();
+  }
+
+  if (false) {
+  console.log("== 8.44 [禁用二分]");
+  }
+
+  console.log("== 8.44 T58 事件钩子批（抽牌/弃牌/受击/伤害附带）==");
+  {
+    const deck = (ids) => { State.levelRelicDeck = ids.slice(); };
+
+    /* 寂静序曲：每抽1牌+10临时力量（cap15） */
+    State.reset(); State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_050"]);
+    Turn.startBattle();
+    let b = State.battle;
+    const strOf = () => __buffsAll(b.allies[0], "buff_strength").reduce((s2, m) => s2 + (m.per || 0) * m.stacks, 0);
+    const base58 = strOf();   // 开战抽5已计入（每张+10）
+    b.piles.draw = [Cards.inst("shared_inspire", false), Cards.inst("shared_inspire", false)];
+    Cards.draw(2);
+    check("T58 寂静序曲：再抽2牌→临时力量+20（叠加）", strOf() === base58 + 20, "力:" + strOf() + " 基:" + base58);
+    State.reset();
+
+    /* 维度影像·希洛：弃1牌+5狂气；维度影像·卡茜亚：抽1牌+1狂气 */
+    State.newBattle();
+    State.addAlly("char_b05", 1); State.addAlly("char_kasia", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_194", "lr_203"]);
+    Turn.startBattle();
+    b = State.battle;
+    const hero = b.allies[0], kasia = b.allies[1];
+    hero.guku = 0; kasia.guku = 0;
+    b.piles.hand = [Cards.inst("shared_inspire", false)];
+    b.piles.draw = [Cards.inst("shared_inspire", false)];
+    Turn._discardOne(b.piles.hand[0].uid);   // 直调钩子避开敌方行动
+    Cards.draw(1);
+    check("T58 希洛影像弃牌+5 / 卡茜亚影像抽牌+1", hero.guku === 5 && kasia.guku === 1, "希洛:" + hero.guku + " 卡茜亚:" + kasia.guku);
+    State.reset();
+
+    /* 维度影像·雷娅：失去生命+16力量（本场10次，battle 级 cap） */
+    State.newBattle();
+    State.addAlly("char_b08", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_188"]);
+    Turn.startBattle();
+    b = State.battle;
+    const leia = b.allies[0];
+    Damage.applyRawDamage(leia, 10, "测试");
+    Damage.applyRawDamage(leia, 10, "测试");
+    check("T58 雷娅影像：失去生命2次→力量+32", strOf() === 32, "力:" + strOf());
+    State.reset();
+
+    /* 安全出口：受伤→反击167（每回合3次） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_074"]);
+    Turn.startBattle();
+    b = State.battle;
+    const dd = b.allies[0];
+    for (let i = 0; i < 4; i++) Damage.applyRawDamage(dd, 5, "测试");
+    const rip = Buffs.collect(dd, "riposteFlat").reduce((s2, m) => s2 + m.total, 0);
+    check("T58 安全出口：受伤4次→反击167×3（cap3）", rip === 501, "反击:" + rip);
+    State.reset();
+
+    /* 行道之骸：回合开始全体反击1109 */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_080"]);
+    Turn.startBattle();
+    b = State.battle;
+    const rip2 = b.allies.reduce((s2, a) => s2 + Buffs.collect(a, "riposteFlat").reduce((x, m) => x + m.total, 0), 0);
+    check("T58 行道之骸：回合开始反击1109", rip2 >= 1109, "反击:" + rip2);
+    State.reset();
+
+    /* 镭射颌骨：爆发后全体纯粹伤害15%maxHp+中毒 */
+    State.newBattle();
+    State.addAlly("char_doll", 1);
+    State.addEnemy("enemy_dummy");
+    deck(["lr_066"]);
+    Turn.startBattle();
+    b = State.battle;
+    const raw58 = Math.ceil(b.team.maxHp * 0.15);
+    const hp0 = b.enemies[0].hp;
+    LevelRelics.onBurst(b.allies[0], 100);
+    const poi = __buffsAll(b.enemies[0], "debuff_poison").reduce((s2, m) => s2 + m.stacks, 0);
+    check("T58 镭射颌骨：爆发后全体受纯粹伤害+中毒", hp0 - b.enemies[0].hp === raw58 && poi >= raw58,
+      "伤:" + (hp0 - b.enemies[0].hp) + "/" + raw58 + " 毒:" + poi);
+    State.reset();
+
+    /* 祭司权杖：造成伤害→全体中毒167（cap5） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy"); State.addEnemy("enemy_dummy");
+    deck(["lr_061"]);
+    Turn.startBattle();
+    b = State.battle;
+    for (let i = 0; i < 6; i++) Damage.deal({ source: b.allies[0], target: b.enemies[0], card: null, eff: { value: 5 }, label: "t" });
+    const poi2 = b.enemies.map(e => __buffsAll(e, "debuff_poison").reduce((s2, m) => s2 + m.stacks, 0));
+    check("T58 祭司权杖：6次伤害→全体中毒167×5（cap5）", poi2.every(p => p === 835), "毒:" + poi2.join("/"));
+    State.reset();
+
+    /* 异种喉舌：打击伤害10%转中毒（cap2217点） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_070"]);
+    Turn.startBattle();
+    b = State.battle;
+    const strikeDef58 = DBF.cards.find(c => c.name === "基础打击" && c.owner === "char_helot_catena");
+    State.forceCrit = false;
+    const r58 = Damage.deal({ source: b.allies[0], target: b.enemies[0], card: strikeDef58, eff: { value: 100 }, label: "t" });
+    State.forceCrit = null;
+    const poi3 = __buffsAll(b.enemies[0], "debuff_poison").reduce((s2, m) => s2 + m.stacks, 0);
+    check("T58 异种喉舌：打击伤害→中毒+10%层", poi3 === Math.floor(r58.final * 0.10), "毒:" + poi3 + " 伤:" + r58.final);
+    State.reset();
+
+    /* 维度影像·血链·希洛：主动伤害附加20%出血 */
+    State.newBattle();
+    State.addAlly("char_helot_catena", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_196"]);
+    Turn.startBattle();
+    b = State.battle;
+    State.forceCrit = false;
+    const rBl = Damage.deal({ source: b.allies[0], target: b.enemies[0], card: null, eff: { value: 50 }, label: "t" });
+    State.forceCrit = null;
+    const bl = __buffsAll(b.enemies[0], "debuff_bleed").reduce((s2, m) => s2 + m.stacks, 0);
+    check("T58 血链影像：出血=伤害20%", bl === Math.round(rBl.final * 0.2), "出血:" + bl + " 伤:" + rBl.final);
+    State.reset();
+
+    /* 维度影像·图鲁/熔毁·朵尔：爆发钩子（触腕+2/消耗分发） */
+    State.newBattle();
+    State.addAlly("char_tulu", 1); State.addAlly("char_doll_inferno", 1); State.addAlly("char_doll", 1);
+    State.addEnemy("enemy_dummy");
+    deck(["lr_223", "lr_180"]);
+    Turn.startBattle();
+    b = State.battle;
+    b.tentacle = { count: 1, stance: "潮涌", rally: 0, swapped: false };   // 强制触腕环境（图鲁深海本会激活，保险）
+    const tulu = b.allies[0], inferno = b.allies[1], dll = b.allies[2];
+    tulu.guku = 0; inferno.gukuMax = 200; inferno.guku = 200; dll.guku = 0;
+    LevelRelics.onBurst(inferno, 200);
+    check("T58 图鲁影像：爆发后触腕+2", b.tentacle.count === 3, "触腕:" + b.tentacle.count);
+    check("T58 熔毁朵尔影像：消耗200→其他各+10", tulu.guku === 10 && dll.guku === 10, "图鲁:" + tulu.guku + " 朵尔:" + dll.guku);
+    State.reset();
+
+    /* 维度影像·温柯尔：他人爆发→温柯尔+5 */
+    State.newBattle();
+    State.addAlly("char_b05", 1); State.addAlly("char_d05", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_209"]);
+    Turn.startBattle();
+    b = State.battle;
+    const wk = b.allies[1];
+    wk.guku = 0;
+    LevelRelics.onBurst(b.allies[0], 100);
+    check("T58 温柯尔影像：希洛爆发→温柯尔+5", wk.guku === 5, "guku:" + wk.guku);
+    State.reset();
+
+    /* 维度影像·奥瑞塔：打出防御→腺体分裂置手（每回合1次） */
+    State.newBattle();
+    State.addAlly("char_o05", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_212"]);
+    Turn.startBattle();
+    b = State.battle;
+    const defCard58 = DBF.cards.find(c => c.name === "基础防御" && c.owner === "char_o05");
+    const defInst58 = Cards.inst(defCard58.id, false);
+    b.piles.hand = [defInst58]; b.piles.draw = []; b.piles.discard = []; b.energy = 9;
+    Cards.play(defInst58.uid);
+    check("T58 奥瑞塔影像：打出防御→腺体分裂置手", b.piles.hand.some(i => i.defId === "char_o05_s1"),
+      "手:" + b.piles.hand.map(i => Cards.def(i).name).join(","));
+    State.reset();
+
+    /* 维度影像·艾瑞卡：一回合第3张指令卡→算力+2（仅一次） */
+    State.newBattle();
+    State.addAlly("char_d08", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_199"]);
+    Turn.startBattle();
+    b = State.battle;
+    b.energy = 0;
+    const er = b.allies[0];
+    const fakeCard58 = { type: "技能", name: "灵感", owner: "shared" };
+    for (let i = 0; i < 4; i++) LevelRelics.onCardPlayed({ defId: "shared_inspire" }, er, fakeCard58);
+    check("T58 艾瑞卡影像：第3张指令卡→算力+2（仅一次）", b.energy === 2, "算力:" + b.energy);
+    State.reset();
+
+    /* 故人的怀表：打出防御→临时反击970（cap3） */
+    State.newBattle();
+    State.addAlly("char_doll", 1); State.addEnemy("enemy_dummy");
+    deck(["lr_076"]);
+    Turn.startBattle();
+    b = State.battle;
+    const dd2 = b.allies[0];
+    const fakeDef58 = { type: "防御", name: "防御", owner: "char_doll" };
+    for (let i = 0; i < 4; i++) LevelRelics.onCardPlayed({ defId: "card_doll_defend" }, dd2, fakeDef58);
+    const rip3 = Buffs.collect(dd2, "riposteFlat").reduce((s2, m) => s2 + m.total, 0);
+    check("T58 故人的怀表：打出防御4次→临时反击970×3（cap3）", rip3 === 2910, "反击:" + rip3);
     State.reset();
   }
 

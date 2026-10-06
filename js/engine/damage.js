@@ -281,7 +281,7 @@ const Damage = {
     }
     /* 关卡造物（T53）：缠丝玛瑙「每次造成伤害+临时力量（cap）」+ 视力矫正器伤害次数计数（主动与触腕同一计数） */
     if (source && source.side === "ally" && typeof LevelRelics !== "undefined") {
-      LevelRelics.onDeal(source, target);
+      LevelRelics.onDeal(source, target, card, r.final);
       LevelRelics.countDeal();
     }
     return r;
@@ -317,7 +317,9 @@ const Damage = {
 
     if (unit.side === "ally") {
       const t = State.battle.team;
+      const hpBefore = t.hp;
       t.hp = Math.max(0, t.hp - remain);
+      if (typeof LevelRelics !== "undefined" && hpBefore - t.hp > 0) LevelRelics.onAllyDamaged(unit, hpBefore - t.hp);   // T58：失去生命钩子（雷娅/安全出口）
       /* 死亡抵抗（T48②）：受致命伤时不立即判负——roll 队伍死抗总和%（>100 封顶），
        * 成功→hp=1 存活+此后概率减半；失败→hp 保持 0 由 checkEnd 判负。
        * 本方法=所有伤害路径的统一落账口（deal/反击/中毒/出血/余烬引爆/触腕），一处覆盖全部致命路径；

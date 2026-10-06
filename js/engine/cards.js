@@ -85,6 +85,7 @@ const Cards = {
       const c = b.piles.draw.pop();
       b.piles.hand.push(c);
       Log.add(`抽到 <b>${this.def(c).name}</b>`, "sys");
+      if (typeof LevelRelics !== "undefined") LevelRelics.onDraw();   // T58：每抽 1 张（寂静序曲/维度影像·卡茜亚）
     }
     State.notify();
   },
@@ -731,8 +732,8 @@ const Cards = {
     if (typeof RealmSys !== "undefined") RealmSys.onBurst(ally);
     /* 命轮爆发钩子（T8）：巨人之刃爆伤+60%/神王的颂歌他人获6狂气/致挚友/心之壁垒/圣火等（pre=本次狂气消耗） */
     if (typeof Wheels !== "undefined") Wheels.onBurst(ally, pre);
-    /* 关卡造物爆发钩子（T50）：美丽瞬间银钥/重锁临时力量 */
-    if (typeof LevelRelics !== "undefined") LevelRelics.onBurst(ally);
+    /* 关卡造物爆发钩子（T50）：美丽瞬间银钥/重锁临时力量；T58 传 pre 供分发/触腕键 */
+    if (typeof LevelRelics !== "undefined") LevelRelics.onBurst(ally, pre);
     Turn.checkEnd();
     State.notify();
   }
